@@ -7,7 +7,7 @@ export function describeAIError(error,stage='loading'){
  }else if(/cache|quota|storage.*(denied|full|exceed)/i.test(raw)){
   code='ai_cache';message='The browser could not store or read the AI model. Retry outside private browsing, or free some browser storage. Manual tagging still works.';
  }else if(/failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module/i.test(raw)){
-  code='ai_runtime_download';message='The AI software download failed. Check whether your network or a browser extension blocks jsDelivr. Manual tagging still works.';
+  code='ai_runtime_download';message='The AI software could not load from Productiondeck. Refresh the site and retry; if it continues, share the error details below. Manual tagging still works.';
  }else if(/no available backend|webassembly|wasm|compileerror|instantiate|unsupported.*(operator|kernel)|inferencesession/i.test(raw)){
   code='ai_engine';message='The browser could not start the AI engine. Open the error details below; a recent Chrome or Edge browser may help. Manual tagging still works.';
  }else if(stage==='analyzing'&&/decode|bitmap|image.*(read|load|invalid)|unsupported input type/i.test(raw)){

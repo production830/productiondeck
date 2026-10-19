@@ -5,3 +5,9 @@ node_modules/
 !.dev.vars.example
 .env
 data/
+
+# Verified runtime files are fetched by Wrangler custom build.
+/public/vendor/transformers-3.7.2/*.js
+/public/vendor/transformers-3.7.2/*.mjs
+/public/vendor/transformers-3.7.2/*.wasm
+/public/vendor/transformers-3.7.2/*.tmp

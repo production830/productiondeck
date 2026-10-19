@@ -26,7 +26,7 @@
     if(id!==run)return;photos.push(blob);
    }
    if(id!==run)return;
-   worker ||= new Worker('/ai-worker.js?v=2',{type:'module'});
+   worker ||= new Worker('/ai-worker.js?v=3',{type:'module'});
    worker.onmessage=({data})=>{
     if(data.id!==run||!active)return;
     if(data.type==='status'){status(data.message);return}

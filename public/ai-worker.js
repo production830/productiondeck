@@ -9,8 +9,9 @@ self.onmessage=async({data:{id,photos}})=>{
  try{
   if(!classifier){
    send('status',{message:'Downloading the AI model for this browser. First use can take a few minutes…'});
-   const {pipeline,env}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/dist/transformers.min.js');
+   const {pipeline,env}=await import('/vendor/transformers-3.7.2/transformers.min.js');
    env.allowLocalModels=false;env.allowRemoteModels=true;env.useBrowserCache=true;
+   env.backends.onnx.wasm.wasmPaths=new URL('/vendor/transformers-3.7.2/',self.location.origin).href;
    env.backends.onnx.wasm.numThreads=1;env.backends.onnx.wasm.proxy=false;
    stage='loading';
    classifier=await pipeline('zero-shot-image-classification','Xenova/clip-vit-base-patch32',{
