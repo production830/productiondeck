@@ -13,5 +13,8 @@
   },
   "vars": {
     "SUPABASE_URL": "https://jqjbyekctjhvrfltidfc.supabase.co"
+  },
+  "build": {
+    "command": "node scripts/vendor-pdf.mjs"
   }
 }

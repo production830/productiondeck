@@ -5,3 +5,8 @@ node_modules/
 !.dev.vars.example
 .env
 data/
+
+# Verified PDF dependencies are downloaded during the custom build.
+/public/vendor/pdf/*.js
+/public/vendor/pdf/*.ttf
+/public/vendor/pdf/*.tmp

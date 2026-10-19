@@ -268,3 +268,19 @@ test('Project Decks can be named and edited independently without deleting refer
  assert.equal((await f.req('/api/boards/'+deck.id,{method:'PUT',body:{name:' '}})).status,400);
  assert.equal((await f.req('/api/boards/'+deck.id,{method:'DELETE'})).status,200);assert.equal(f.tables.items.length,2);
 });
+
+test('fixed categories validate up to five predefined subcategories and keep tags independent',async()=>{
+ const f=fixture(),data={title:'Reference',type:'location',subcategories:['City','Interior','Apartment','Building','Office'],tags:['custom look']};
+ const created=await f.req('/api/items',{method:'POST',body:data});assert.equal(created.status,201);const {id}=await created.json();
+ const record=f.tables.items.find(x=>x.id===id).data;assert.equal(record.category,'Location');assert.deepEqual(record.subcategories,data.subcategories);assert.deepEqual(record.tags,['custom look']);
+ for(const subcategories of [['City','Village','Interior','Exterior','Office','Apartment'],['Made up'],['City',123],null,'Office'])assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,subcategories}})).status,400);
+ assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,type:'unknown'}})).status,400);
+ assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,subcategories:['office','Office']}})).status,200);assert.deepEqual(f.tables.items[0].data.subcategories,['Office']);
+ const edit={title:'Renamed',type:'location',tags:['other manual tag']};assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:edit})).status,200);assert.deepEqual(f.tables.items[0].data.subcategories,['Office']);
+});
+test('legacy read compatibility does not rewrite stored data and edits preserve the previous category',async()=>{
+ const f=fixture(),id=crypto.randomUUID();f.tables.items.push({id,created:'2026-01-01',data:{title:'Archive',type:'location',category:'Unusual former category',tags:['keep me']}});
+ const read=(await (await f.req('/api/items')).json())[0];assert.equal(read.category,'Location');assert.equal(read.legacyCategory,'Unusual former category');assert.deepEqual(read.subcategories,[]);assert.equal(f.tables.items[0].data.category,'Unusual former category');
+ assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{title:'Archive',type:'location',subcategories:['Warehouse'],tags:['keep me']}})).status,200);
+ const saved=f.tables.items[0].data;assert.equal(saved.legacyCategory,'Unusual former category');assert.deepEqual(saved.subcategories,['Warehouse']);assert.deepEqual(saved.tags,['keep me']);
+});

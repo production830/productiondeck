@@ -1,3 +1,5 @@
+import './public/taxonomy.js';
+const taxonomy=globalThis.ProductiondeckTaxonomy;
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
 const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
 const clean=(v,max=300)=>typeof v==='string'?v.trim().slice(0,max):'';
@@ -16,7 +18,8 @@ function json(value,status=200){return new Response(JSON.stringify(value),{statu
 function itemData(b){
  if(!clean(b.title))throw fail(400,'Give this reference a name or title');
  if(!['location','prop','casting'].includes(b.type))throw fail(400,'Choose a location, prop, or casting profile');
- const data={title:clean(b.title),type:b.type,category:clean(b.category,80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',coverImage:clean(b.coverImage,36),tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ const data={title:clean(b.title),type:b.type,category:taxonomy.labels[b.type],subcategories:taxonomy.fromItem(b),legacyCategory:clean(taxonomy.legacyOf(b),80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',coverImage:clean(b.coverImage,36),tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ if(Object.hasOwn(b,'subcategories')){if(!Array.isArray(b.subcategories)||b.subcategories.length>5||b.subcategories.some(value=>typeof value!=='string'||!taxonomy.canonical(value)))throw fail(400,'Choose up to 5 subcategories from the fixed list');data.subcategories=[...new Set(b.subcategories.map(taxonomy.canonical))]}
  if(data.coverImage&&!uuid.test(data.coverImage))throw fail(400,'Choose a valid thumbnail photo');
  if(b.type==='casting'){
   const c=b.casting&&typeof b.casting==='object'&&!Array.isArray(b.casting)?b.casting:{};
@@ -179,7 +182,7 @@ export function createHandler(fetcher=fetch){
     const all=async(table,query)=>{let rows=[],page;do{page=await rest(table,query+'&limit=500&offset='+rows.length);rows.push(...page)}while(page.length===500);return rows};
     const [items,images]=await Promise.all([all('items','select=id,data,created&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
     const groups=new Map();for(const im of images){if(!groups.has(im.item_id))groups.set(im.item_id,[]);groups.get(im.item_id).push(im)}
-    return finish(json(items.map(r=>({...r.data,id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
+    return finish(json(items.map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
    if(p==='/api/items'&&request.method==='POST'){
     const data=itemData(await body(request)),id=crypto.randomUUID();if(data.coverImage)throw fail(400,'Upload photos before choosing a thumbnail');await rest('items','',{method:'POST',data:{id,data}});return finish(json({id},201));
@@ -189,6 +192,8 @@ export function createHandler(fetcher=fetch){
     const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length)throw fail(404,'Reference not found');
     if(request.method==='PUT'){
      const b=await body(request),data=itemData(b);
+     if(!Object.hasOwn(b,'subcategories'))data.subcategories=taxonomy.fromItem(rows[0].data);
+     data.legacyCategory=clean(taxonomy.legacyOf(rows[0].data)||taxonomy.legacyOf(b),80);
      if(!Object.hasOwn(b,'coverImage'))data.coverImage=rows[0].data.coverImage||'';
      if(data.coverImage&&!(await rest('images','id=eq.'+data.coverImage+'&item_id=eq.'+id+'&select=id')).length)throw fail(400,'Choose a thumbnail from this reference’s photos');
      await rest('items','id=eq.'+id,{method:'PATCH',data:{data}});return finish(json({ok:true}));

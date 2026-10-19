@@ -30,3 +30,9 @@ test('related results are deterministic, limited, and use no fallback unrelated 
  assert.equal(findSimilar(current,records).length,6);assert.equal(findSimilar(current,records,2).length,2);assert.equal(findSimilar(current,records,0).length,0);
  assert.deepEqual(findSimilar(current,records).map(x=>x.item.id),findSimilar(current,[...records].reverse()).map(x=>x.item.id));
 });
+
+test('shared top-level category alone never makes every location a similar reference',()=>{
+ const current=item('base',{category:'Location',subcategories:['Apartment','Interior']});
+ const matches=findSimilar(current,[item('unrelated',{category:'Location',subcategories:['Forest']}),item('related',{category:'Location',subcategories:['Interior']})]);
+ assert.deepEqual(matches.map(x=>x.item.id),['related']);assert.deepEqual(matches[0].sharedSubcategories,['Interior']);
+});

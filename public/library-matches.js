@@ -2,16 +2,17 @@
 (() => {
  const normalize=value=>typeof value==='string'?value.normalize('NFKC').trim().toLowerCase().replace(/\s+/g,' '):'';
  function tagMap(item){const tags=new Map();for(const tag of Array.isArray(item.tags)?item.tags:[]){const key=normalize(tag);if(key&&!tags.has(key))tags.set(key,tag.trim())}return tags}
+ function subcategoryMap(item){const values=Array.isArray(item.subcategories)?item.subcategories:[item.category];return new Map(values.filter(value=>value&&!['location','locations','props','prop','casting'].includes(normalize(value))).map(value=>[normalize(value),String(value).trim()]))}
  function findSimilar(current,items,limit=6){
   if(!current||!['location','prop'].includes(current.type)||!Array.isArray(items))return [];
-  const ownTags=tagMap(current),category=normalize(current.category);
+  const ownTags=tagMap(current),ownSubcategories=subcategoryMap(current);
   return items.filter(item=>item&&item.id!==current.id&&item.type===current.type).map(item=>{
    const tags=tagMap(item),sharedTags=[...ownTags].filter(([key])=>tags.has(key)).map(([,label])=>label);
-   const sameCategory=Boolean(category&&category===normalize(item.category));
+   const otherSubcategories=subcategoryMap(item),sharedSubcategories=[...ownSubcategories].filter(([key])=>otherSubcategories.has(key)).map(([,label])=>label),sameCategory=sharedSubcategories.length>0;
    if(!sharedTags.length&&!sameCategory)return null;
    const union=new Set([...ownTags.keys(),...tags.keys()]).size;
-   const score=sharedTags.length*4+(union?sharedTags.length/union*3:0)+(sameCategory?2:0);
-   return {item,sharedTags,sameCategory,score};
+   const score=sharedTags.length*4+(union?sharedTags.length/union*3:0)+sharedSubcategories.length*2;
+   return {item,sharedTags,sharedSubcategories,sameCategory,score};
   }).filter(Boolean).sort((a,b)=>b.score-a.score||String(a.item.title||'').localeCompare(String(b.item.title||''))||String(a.item.id).localeCompare(String(b.item.id))).slice(0,Math.max(0,Math.min(12,Number(limit)||0)));
  }
  globalThis.ProductiondeckSimilarity=Object.freeze({findSimilar});
