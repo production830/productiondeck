@@ -44,13 +44,13 @@ function fixture(){
   if(p.startsWith('/rest/v1/pd_')){
    assert.equal(options.headers.apikey,'test-service-secret');
    const table=p.split('pd_')[1],rows=tables[table];assert.ok(rows,'Unknown table '+table);
-   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>!value.startsWith('eq.')||String(row[key])===value.slice(3)));
+   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>{const field=key.startsWith('data->>')?row.data?.[key.slice(7)]:row[key];return value.startsWith('eq.')?String(field)===value.slice(3):value.startsWith('neq.')?String(field)!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(field)):true}));
    if(m==='GET'){const limit=Number(u.searchParams.get('limit')||1000),offset=Number(u.searchParams.get('offset')||0);return response(filter(rows).slice(offset,offset+limit))}
    if(m==='POST'){
     if(table==='images'&&rows.some(r=>r.item_id===body.item_id&&r.slot===body.slot))return response({code:'23505'},409);
     rows.push({...body,...(table==='items'?{created:new Date().toISOString()}:{}),...(table==='boards'?{items:body.items||[]}: {})});return response(null,201);
    }
-   if(m==='PATCH'){for(const row of filter(rows))Object.assign(row,body);return response(null,204)}
+   if(m==='PATCH'){const changed=filter(rows);for(const row of changed)Object.assign(row,body);return options.headers.Prefer==='return=representation'?response(changed):response(null,204)}
    if(m==='DELETE'){const deleted=filter(rows);tables[table]=rows.filter(r=>!deleted.includes(r));if(table==='items')tables.images=tables.images.filter(im=>!deleted.some(i=>i.id===im.item_id));return response(null,204)}
   }
   if(p.startsWith('/storage/v1/object/')){
@@ -294,4 +294,29 @@ test('new city writes use standardized spellings, reject unknown cities and pres
  f.tables.items[0].data.city='Old custom area';response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'Old custom area'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Old custom area');
  response=await f.req('/api/items/'+id,{method:'PUT',body:{title:'Renamed mural',type:'location'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Old custom area');
  response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'Skopje'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Shkup');
+});
+
+const scheduleBody=()=>({title:'Shoot day 1',project:'Campaign Çela',date:'2026-10-20',startTime:'23:30',crewCall:'23:00',client:'Test client',meetingPoint:'Studio',contact:'Crew contact',notes:'Production notes',rows:[{id:crypto.randomUUID(),type:'scene',duration:90,shot:'01',description:'Opening',locationId:'',locationText:'',talentIds:[],propIds:[],notes:'Working notes'}]});
+test('standalone shared schedules save, edit, duplicate and delete without becoming library references',async()=>{
+ const f=fixture(),body=scheduleBody();let r=await f.req('/api/schedules',{method:'POST',body});assert.equal(r.status,201);const original=await r.json();assert(original.revision);assert.equal(original.project,'Campaign Çela');
+ assert.equal((await (await f.req('/api/items')).json()).length,0);assert.equal((await f.req('/api/items/'+original.id,{method:'PUT',body:{title:'Oops',type:'location'}})).status,404);assert.equal((await f.req('/api/items/'+original.id,{method:'DELETE'})).status,404);assert.equal((await f.req('/api/items/'+original.id+'/images',{method:'POST',raw:new Uint8Array([255,216,255])})).status,404);
+ const listing=await (await f.req('/api/schedules',{cookie:'__Host-pd_access=crew-token'})).json();assert.equal(listing.length,1);assert.equal(listing[0].id,original.id);
+ r=await f.req('/api/schedules/'+original.id,{method:'PUT',body:{...body,title:'Changed',revision:original.revision}});assert.equal(r.status,200);const updated=await r.json();assert.notEqual(updated.revision,original.revision);
+ assert.equal((await f.req('/api/schedules/'+original.id,{method:'PUT',body:{...body,title:'Stale',revision:original.revision}})).status,409);assert.equal((await (await f.req('/api/schedules/'+original.id)).json()).title,'Changed');
+ r=await f.req('/api/schedules',{method:'POST',body:{...updated,title:'Day 2',date:'2026-10-21'}});assert.equal(r.status,201);const copy=await r.json();assert.notEqual(copy.id,original.id);assert.equal((await(await f.req('/api/schedules')).json()).length,2);
+ const deck=await(await f.req('/api/boards',{method:'POST',body:{name:'Independent deck'}})).json();assert.equal((await f.req('/api/boards/'+deck.id,{method:'DELETE'})).status,200);assert.equal((await(await f.req('/api/schedules')).json()).length,2);
+ assert.equal((await f.req('/api/schedules/'+original.id,{method:'DELETE'})).status,200);assert.equal((await f.req('/api/schedules/'+original.id)).status,404);assert.equal((await(await f.req('/api/schedules')).json()).length,1);
+});
+test('schedule references are type checked and snapshotted, and removed references can be cleared',async()=>{
+ const f=fixture();const refs=[];for(const type of ['location','prop','casting'])refs.push(await(await f.req('/api/items',{method:'POST',body:{title:type+' reference',type}})).json());
+ const body=scheduleBody();body.rows[0].locationId=refs[0].id;body.rows[0].propIds=[refs[1].id];body.rows[0].talentIds=[refs[2].id];
+ let response=await f.req('/api/schedules',{method:'POST',body});assert.equal(response.status,201);const record=await response.json();assert.equal(record.referenceLabels[refs[0].id],'location reference');assert.equal((await(await f.req('/api/items')).json()).length,3);
+ const bad=structuredClone(body);bad.rows[0].locationId=refs[1].id;assert.equal((await f.req('/api/schedules',{method:'POST',body:bad})).status,400);
+ await f.req('/api/items/'+refs[0].id,{method:'DELETE'});assert.equal((await(await f.req('/api/schedules/'+record.id)).json()).referenceLabels[refs[0].id],'location reference');
+ assert.equal((await f.req('/api/schedules/'+record.id,{method:'PUT',body:{...body,revision:record.revision}})).status,400);body.rows[0].locationId='';assert.equal((await f.req('/api/schedules/'+record.id,{method:'PUT',body:{...body,revision:record.revision}})).status,200);
+ assert.equal((await f.req('/api/schedules/'+refs[1].id,{method:'DELETE'})).status,404);
+});
+test('schedule mutations reject bad durations, dates and shapes atomically, and require membership',async()=>{
+ const f=fixture(),body=scheduleBody();for(const patch of [{date:'2026-02-30'},{startTime:'25:00'},{rows:[{...body.rows[0],duration:0}]},{rows:[{...body.rows[0],duration:721}]},{rows:[{...body.rows[0],talentIds:['not-a-uuid']}]},{rows:[body.rows[0],body.rows[0]]}])assert.equal((await f.req('/api/schedules',{method:'POST',body:{...body,...patch}})).status,400);
+ assert.equal(f.tables.items.length,0);assert.equal((await f.req('/api/schedules',{cookie:''})).status,401);assert.equal((await f.req('/api/schedules',{method:'POST',body,cookie:''})).status,401);
 });

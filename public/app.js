@@ -24,7 +24,7 @@ async function api(path,options={}){
 const post=(path,b,method='POST')=>api(path,{method,body:JSON.stringify(b)});
 function showLogin(){state.user=null;const home=homeReady&&(!location.hash||location.hash==='#home');$('#home').hidden=!home;$('#login').hidden=home;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
 function error(e){$('#notice').textContent=e.message}
-async function load(){[state.items,state.boards]=await Promise.all([api('items'),api('boards')]);state.items=state.items.map(taxonomy.record);render()}
+async function load(){[state.items,state.boards]=await Promise.all([api('items'),api('boards')]);state.items=state.items.map(taxonomy.record);render();if(state.user)ProductiondeckScheduleUI.route()}
 const kindName=taxonomy.labels;
 const subcategoryText=values=>(values||[]).map(taxonomy.label);
 const cityOptions=()=>taxonomy.cityGroups.map(group=>`<optgroup label="${esc(group.country)}">${group.cities.map(city=>`<option value="${esc(city)}">${esc(city)}</option>`).join('')}</optgroup>`).join('');
@@ -238,7 +238,7 @@ $('#pdf-form').onsubmit=async e=>{
 };
 $('#team').onclick=()=>team().catch(error);
 $('#team-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('users',Object.fromEntries(new FormData(e.target)));e.target.reset();$('#team-error').textContent='';await team()}catch(err){$('#team-error').textContent=err.message}finally{e.submitter.disabled=false}};
-document.addEventListener('click',async e=>{const close=e.target.closest('.close');if(close)close.closest('dialog').close();const view=e.target.closest('[data-view]');if(view){state.view=view.dataset.view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='');render()}const tag=e.target.closest('[data-tag]');if(tag){state.tag=state.tag===tag.dataset.tag?'':tag.dataset.tag;render()}const card=e.target.closest('[data-open]');if(card)openDetail(card.dataset.open);if(e.target.id==='empty-add')openEditor();const member=e.target.closest('[data-remove-user]');if(member&&confirm('Remove this teammate’s access and sign them out?'))try{await api('users/'+member.dataset.removeUser,{method:'DELETE'});await team()}catch(err){$('#team-error').textContent=err.message}});
+document.addEventListener('click',async e=>{const close=e.target.closest('.close');if(close)close.closest('dialog').close();const view=e.target.closest('[data-view]');if(view){if(location.hash==='#schedules')location.hash='browse';state.view=view.dataset.view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='');render()}const tag=e.target.closest('[data-tag]');if(tag){state.tag=state.tag===tag.dataset.tag?'':tag.dataset.tag;render()}const card=e.target.closest('[data-open]');if(card)openDetail(card.dataset.open);if(e.target.id==='empty-add')openEditor();const member=e.target.closest('[data-remove-user]');if(member&&confirm('Remove this teammate’s access and sign them out?'))try{await api('users/'+member.dataset.removeUser,{method:'DELETE'});await team()}catch(err){$('#team-error').textContent=err.message}});
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!$('dialog[open]')&&!$('#app').hidden){e.preventDefault();$('#search').focus()}});
 $('#password-button').onclick=()=>{$('#password-form').reset();$('#password-error').textContent='';$('#password-modal').showModal()};
 $('#password-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('password',Object.fromEntries(new FormData(e.target)));$('#password-modal').close();showLogin();$('#login-error').textContent='Password updated. Please sign in with your new password.'}catch(err){$('#password-error').textContent=err.message}finally{e.submitter.disabled=false}};
@@ -257,11 +257,13 @@ function routeWorkspace(){
  if(home){$('#login').hidden=true;$('#app').hidden=true;$$('dialog[open]').forEach(d=>d.close());return}
  if(!state.user){showLogin();return}
  $('#login').hidden=true;$('#app').hidden=false;
+ if(ProductiondeckScheduleUI.route())return;
  const view={'#locations':'location','#props':'prop','#casting':'casting'}[location.hash];if(view){state.view=view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='')}
  render();
 }
 window.addEventListener('hashchange',()=>{routeWorkspace();if(state.user&&!$('#app').hidden)api('me').then(()=>load()).catch(error)});
 document.addEventListener('click',async e=>{const remove=e.target.closest('[data-remove-deck-item]');if(!remove)return;const board=state.boards.find(x=>x.id===state.view);if(!board)return;remove.disabled=true;try{await post('boards/'+board.id,{items:board.items.filter(id=>id!==remove.dataset.removeDeckItem)},'PUT');await load()}catch(err){remove.disabled=false;error(err)}});
+ProductiondeckScheduleUI.init({api,post,state,esc});
 boot();
 
 setInterval(()=>{if(state.user&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);

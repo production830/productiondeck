@@ -27,6 +27,10 @@
    const format=url.endsWith('.svg')?'PNG':'JPEG';return {data:canvas.toDataURL(format==='PNG'?'image/png':'image/jpeg',0.85),format,width:canvas.width,height:canvas.height};
   }finally{image.src='';URL.revokeObjectURL(object)}
  }
+ async function createDocument(options={}){
+  const [PDF,encodedFont]=await Promise.all([loadRuntime(),fontData()]);
+  const doc=new PDF({unit:'mm',format:'a4',compress:true,putOnlyUsedFonts:true,...options});doc.addFileToVFS('NotoSans.ttf',encodedFont);doc.addFont('NotoSans.ttf','NotoSans','normal');doc.setFont('NotoSans','normal');return doc;
+ }
  const photosOf=item=>{const photos=item.images||[];return item.coverImage&&photos.includes(item.coverImage)?[item.coverImage,...photos.filter(id=>id!==item.coverImage)]:photos};
  async function generate({name,items,options={},signal,refresh,progress=()=>{}}){
   if(!Array.isArray(items)||!items.length)throw Error('Add at least one reference to this Project Deck.');
@@ -84,5 +88,5 @@
   }
   progress('Finishing the PDF…');return doc.output('blob');
  }
- globalThis.ProductiondeckPDF=Object.freeze({generate,filename});
+ globalThis.ProductiondeckPDF=Object.freeze({generate,filename,createDocument,logo:signal=>picture('/brand/tatamata-horizontal.svg',{signal})});
 })();

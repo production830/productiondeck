@@ -1,4 +1,7 @@
 import './public/taxonomy.js';
+import './public/schedule-model.js';
+const schedules=globalThis.ProductiondeckSchedule;
+const isSchedule=data=>data?.type==='shooting_schedule';
 const taxonomy=globalThis.ProductiondeckTaxonomy;
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
 const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
@@ -181,16 +184,16 @@ export function createHandler(fetcher=fetch){
    if(p==='/api/items'&&request.method==='GET'){
     // PostgREST defaults to 1,000 rows; paginate to avoid silently dropping library records.
     const all=async(table,query)=>{let rows=[],page;do{page=await rest(table,query+'&limit=500&offset='+rows.length);rows.push(...page)}while(page.length===500);return rows};
-    const [items,images]=await Promise.all([all('items','select=id,data,created&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
+    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=neq.shooting_schedule&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
     const groups=new Map();for(const im of images){if(!groups.has(im.item_id))groups.set(im.item_id,[]);groups.get(im.item_id).push(im)}
-    return finish(json(items.map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
+    return finish(json(items.filter(r=>!isSchedule(r.data)).map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
    if(p==='/api/items'&&request.method==='POST'){
     const data=itemData(await body(request)),id=crypto.randomUUID();if(data.coverImage)throw fail(400,'Upload photos before choosing a thumbnail');await rest('items','',{method:'POST',data:{id,data}});return finish(json({id},201));
    }
    match=p.match(/^\/api\/items\/([^/]+)$/);
    if(match&&['PUT','DELETE'].includes(request.method)){
-    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length)throw fail(404,'Reference not found');
+    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length||isSchedule(rows[0].data))throw fail(404,'Reference not found');
     if(request.method==='PUT'){
      const b=await body(request),data=itemData(b,rows[0].data);
      if(!Object.hasOwn(b,'city'))data.city=taxonomy.canonicalCity(rows[0].data.city)||rows[0].data.city||'';
@@ -207,7 +210,7 @@ export function createHandler(fetcher=fetch){
    }
    match=p.match(/^\/api\/items\/([^/]+)\/images$/);
    if(match&&request.method==='POST'){
-    const item_id=checkId(match[1]),records=await rest('items','id=eq.'+item_id+'&select=id,data');if(!records.length)throw fail(404,'Reference not found');
+    const item_id=checkId(match[1]),records=await rest('items','id=eq.'+item_id+'&select=id,data');if(!records.length||isSchedule(records[0].data))throw fail(404,'Reference not found');
     const photoLimit=['location','prop'].includes(records[0].data?.type)?20:12;
     const taken=await rest('images','item_id=eq.'+item_id+'&select=slot');let slot=0;while(taken.some(im=>im.slot===slot))slot++;if(slot>=photoLimit)throw fail(400,'Maximum '+photoLimit+' photos for this reference');
     const data=await bytes(request,8*1024*1024),mime=imageMime(data),id=crypto.randomUUID();
@@ -220,6 +223,37 @@ export function createHandler(fetcher=fetch){
    if(match&&request.method==='GET'){
     const id=checkId(match[1]),images=await rest('images','id=eq.'+id+'&select=mime');if(!images.length)throw fail(404,'Image not found');
     const photo=await upstream('/storage/v1/object/authenticated/'+bucket+'/'+id,{raw:true});return finish(new Response(photo.body,{headers:{...security,'Content-Type':images[0].mime}}));
+   }
+   // Schedules are private JSON documents in the existing data store, isolated from library references.
+   match=p.match(/^\/api\/schedules(?:\/([^/]+))?$/);
+   if(match&&['GET','POST','PUT','DELETE'].includes(request.method)){
+    const id=match[1]?checkId(match[1]):'',query='data->>type=eq.shooting_schedule';
+    if(request.method==='GET'&&!id){
+     let rows=[],page;do{page=await rest('items',query+'&select=id,data,created&order=created.asc,id&limit=100&offset='+rows.length);rows.push(...page)}while(page.length===100);
+     return finish(json(rows.filter(row=>isSchedule(row.data)).map(row=>({...row.data,id:row.id}))));
+    }
+    let previous;
+    if(id){const rows=await rest('items','id=eq.'+id+'&'+query+'&select=id,data');previous=rows[0];if(!previous||!isSchedule(previous.data))throw fail(404,'Shooting schedule not found')}
+    if(request.method==='GET'&&id)return finish(json({...previous.data,id:previous.id}));
+    if(request.method==='DELETE'&&id){await rest('items','id=eq.'+id+'&'+query,{method:'DELETE'});return finish(json({ok:true}))}
+    if((request.method==='POST'&&!id)||(request.method==='PUT'&&id)){
+     const b=await body(request);if(previous&&b.revision!==previous.data.revision)throw fail(409,'This schedule was changed by someone else. Reopen it before saving.');
+     let data;try{data=schedules.validate(b)}catch(error){throw fail(400,error.message)}
+     const referenceIds=schedules.referenceIds(data);if(referenceIds.length>500)throw fail(400,'Use up to 500 different library references in one shooting schedule.');
+     const references=new Map();for(let at=0;at<referenceIds.length;at+=100){const rows=await rest('items','id=in.('+referenceIds.slice(at,at+100).join(',')+')&select=id,data&limit=100');for(const row of rows)references.set(row.id,row)}
+     const referenceLabels={};for(const referenceId of referenceIds){
+      const item=references.get(referenceId);if(!item||!['location','prop','casting'].includes(item.data.type))throw fail(400,'A selected reference was removed. Clear it before saving.');
+      if(data.rows.some(row=>row.locationId===referenceId&&item.data.type!=='location'||row.talentIds.includes(referenceId)&&item.data.type!=='casting'||row.propIds.includes(referenceId)&&item.data.type!=='prop'))throw fail(400,'Choose locations, casting and props in their matching fields.');
+      referenceLabels[referenceId]=clean(item.data.title,300);
+     }
+     const document={...data,type:'shooting_schedule',referenceLabels,revision:crypto.randomUUID(),updated:new Date().toISOString()},scheduleId=id||crypto.randomUUID();
+     if(previous){
+      const changed=await rest('items','id=eq.'+id+'&'+query+'&data->>revision=eq.'+previous.data.revision,{method:'PATCH',data:{data:document},headers:{Prefer:'return=representation'}});
+      if(!changed?.length)throw fail(409,'This schedule changed while saving. Reopen it before saving.');
+     }else await rest('items','',{method:'POST',data:{id:scheduleId,data:document}});
+     return finish(json({...document,id:scheduleId},previous?200:201));
+    }
+    throw fail(405,'Method not allowed');
    }
    if(p==='/api/boards'&&request.method==='GET')return finish(json(await rest('boards','select=id,name,items&order=name&limit=1000')));
    if(p==='/api/boards'&&request.method==='POST'){
