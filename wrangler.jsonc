@@ -11,7 +11,7 @@
       "/media/*"
     ]
   },
-  "build": {
-    "command": "node scripts/vendor-ai.mjs"
+  "vars": {
+    "SUPABASE_URL": "https://jqjbyekctjhvrfltidfc.supabase.co"
   }
 }
