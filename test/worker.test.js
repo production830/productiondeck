@@ -105,3 +105,22 @@ test('password change verifies old password and clears the current session',asyn
  const f=fixture();assert.equal((await f.req('/api/password',{method:'POST',body:{current:'wrong',password:'new-password-long'}})).status,401);
  const r=await f.req('/api/password',{method:'POST',body:{current:'correct',password:'new-password-long'}});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/Max-Age=0/);assert.ok(f.calls.some(c=>c.path==='/auth/v1/user'&&c.options.method==='PUT'));
 });
+
+test('casting profiles normalize structured fields and preserve them through shared updates',async()=>{
+ const f=fixture();const data={title:'Test talent',type:'casting',category:'Actor',city:'Test City',availability:'Check first',contact:'Agent contact',tags:['comedy'],casting:{playingAge:'25–35',height:'178 cm',languages:['English','Albanian','English'],skills:['Dance','Voice-over'],showreel:'https://example.test/reel',workedBefore:'yes'}};
+ const created=await f.req('/api/items',{method:'POST',body:data});assert.equal(created.status,201);const {id}=await created.json();
+ const stored=f.tables.items[0].data;assert.equal(stored.type,'casting');assert.deepEqual(stored.casting.languages,['English','Albanian']);assert.equal(stored.casting.workedBefore,'yes');
+ let read=await(await f.req('/api/items',{cookie:'__Host-pd_access=crew-token'})).json();assert.equal(read[0].casting.playingAge,'25–35');assert.equal(read[0].casting.showreel,'https://example.test/reel');
+ const update=await f.req('/api/items/'+id,{method:'PUT',body:{...data,casting:{...data.casting,skills:['Dance','Singing'],workedBefore:'no'}}});assert.equal(update.status,200);
+ read=await(await f.req('/api/items')).json();assert.deepEqual(read[0].casting.skills,['Dance','Singing']);assert.equal(read[0].casting.workedBefore,'no');
+ const board=await(await f.req('/api/boards',{method:'POST',body:{name:'Casting shortlist'}})).json();assert.equal((await f.req('/api/boards/'+board.id,{method:'PUT',body:{items:[id]}})).status,200);assert.deepEqual(f.tables.boards[0].items,[id]);
+});
+test('casting accepts optional fields but blocks unsafe portfolio links',async()=>{
+ const f=fixture();const data={title:'Talent',type:'casting'};
+ let r=await f.req('/api/items',{method:'POST',body:data});assert.equal(r.status,201);assert.equal(f.tables.items[0].data.casting.workedBefore,'unknown');assert.deepEqual(f.tables.items[0].data.casting.skills,[]);
+ for(const showreel of ['javascript:alert(1)','data:text/html,script','http://example.test','https://username:password@example.test']){
+  r=await f.req('/api/items',{method:'POST',body:{...data,casting:{showreel}}});assert.equal(r.status,400);
+ }
+ r=await f.req('/api/items',{method:'POST',body:{...data,type:'prop',casting:{showreel:'javascript:alert(1)'}}});assert.equal(r.status,201);assert.equal(f.tables.items.at(-1).data.casting,undefined);
+ assert.equal((await f.req('/api/items',{cookie:'',method:'POST',body:data})).status,401);
+});

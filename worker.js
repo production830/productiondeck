@@ -14,10 +14,19 @@ const security={
 };
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{...security,'Content-Type':'application/json'}})}
 function itemData(b){
- if(!clean(b.title))throw fail(400,'Give this reference a title');
- if(!['location','prop'].includes(b.type))throw fail(400,'Choose a location or prop');
- return {title:clean(b.title),type:b.type,category:clean(b.category,80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ if(!clean(b.title))throw fail(400,'Give this reference a name or title');
+ if(!['location','prop','casting'].includes(b.type))throw fail(400,'Choose a location, prop, or casting profile');
+ const data={title:clean(b.title),type:b.type,category:clean(b.category,80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ if(b.type==='casting'){
+  const c=b.casting&&typeof b.casting==='object'&&!Array.isArray(b.casting)?b.casting:{};
+  const list=(v,max)=>[...new Set((Array.isArray(v)?v:[]).map(x=>clean(x,max)).filter(Boolean))].slice(0,20);
+  let showreel=clean(c.showreel,1000);
+  if(showreel){try{const u=new URL(showreel);if(u.protocol!=='https:'||u.username||u.password)throw Error();showreel=u.href}catch{throw fail(400,'Use a complete HTTPS link for the showreel')}}
+  data.casting={playingAge:clean(c.playingAge,50),height:clean(c.height,50),languages:list(c.languages,50),skills:list(c.skills,80),showreel,workedBefore:['yes','no','unknown'].includes(c.workedBefore)?c.workedBefore:'unknown'};
+ }
+ return data;
 }
+
 async function bytes(request,max){
  if(Number(request.headers.get('Content-Length'))>max)throw fail(413,'Upload is too large');
  const reader=request.body?.getReader();if(!reader)return new Uint8Array();

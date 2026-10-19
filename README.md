@@ -1,6 +1,6 @@
 # Tatamata Productiondeck
 
-A private visual library of your company's locations and props, with Tatamata branding, photos, tags, combined filters, and shared shortlists for commercial shoots.
+A private visual library of your company's locations, props, and casting talent, with a light Tatamata workspace, photos, tags, combined filters, and shared shortlists for commercial shoots.
 
 ## Free hosting setup
 
@@ -65,6 +65,14 @@ All members can view, create, edit, and delete the shared references and shortli
 
 There is no public registration or in-app password-reset email flow. If an administrator loses their password, the Supabase project owner can use Auth administration to reset that user's password. Do not delete project data to reset an account.
 
+## Casting sheet
+
+Choose **Casting** in navigation and click **Add talent**. Use the name as the title and choose a talent type or role (actor, model, voice artist, extra, presenter, etc.). Add headshots, playing age, height, languages, skills, contact/agent details, fee notes, availability, previous experience, and an HTTPS showreel/portfolio link. Mark whether the person has worked with the team before; leave unknown information as **Not recorded**.
+
+The Casting section has portrait cards and filters for talent type, city, availability, language, skill, and past collaboration. Text search also includes casting skills, languages, and playing age. Shortlists can mix talent, locations, and props for the same production. Profiles and headshots use the same member-only API and private storage as the rest of the library.
+
+Casting fields are stored inside the existing `pd_items.data` JSON column; existing projects do **not** need a new migration or more SQL. No demonstration records are added to the production database.
+
 ## Privacy and storage
 
 The login screen, branding SVGs, and frontend assets are public. Records, shortlists, membership data, and photo downloads require an authenticated member. Session tokens use Secure, HttpOnly, SameSite cookies; they are not stored in browser localStorage. Database tables have row-level security enabled and browser roles have no table privileges. The Worker alone holds the service-role key. Authentication and database requests use HTTPS.
@@ -75,12 +83,12 @@ Deleting a reference permanently deletes its browsing photos. Deleting a shortli
 
 ## Local development and verification
 
-Requires Node.js 22 or later. `npm test` runs the Worker handler tests directly against a simulated Supabase HTTP service, with no real credentials or live database. `npm run check` checks JavaScript syntax. These checks cover access control, private photos, refresh behavior, shared CRUD, shortlists, upload cleanup, membership revocation, and catalog pagination. They do not prove live Supabase configuration, Cloudflare deployment, browser layout, or provider quotas.
+Requires Node.js 22 or later. `npm test` runs the Worker handler tests directly against a simulated Supabase HTTP service, with no real credentials or live database. `npm run check` checks JavaScript syntax. These checks cover access control, private photos, refresh behavior, shared CRUD, shortlists, upload cleanup, membership revocation, and catalog pagination. They do not prove live Supabase configuration, Cloudflare deployment, live provider quotas. The light layout and casting interactions were also checked locally on desktop and mobile using simulated records, without changing the live library.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars`, fill it using a dedicated Supabase **test** project, and run `npm run dev`. Wrangler is fetched through `npx`. Production cookies use Secure and the `__Host-` prefix; use a local HTTPS preview for browser sign-in. Do not commit `.dev.vars`.
 
-The four logo SVGs under `public/brand/` are the company's supplied artwork, retained unchanged. The horizontal variant is used in navigation, the original in sign-in, the icon in workspace chrome and the favicon, and the wordmark in the footer. CSS displays the black artwork in a light tone on the dark interface.
+The four logo SVGs under `public/brand/` are the company's supplied artwork, retained unchanged. The horizontal variant is used in navigation, the original in sign-in, the icon in workspace chrome and the favicon, and the wordmark in the footer. The artwork is shown in its original black on the light interface.
 
 ## Hosting migration status
 
-The paid Render blueprint and disk-based server were removed from this version. The source is prepared for the free setup above. A live deployment and browser QA still require the owner's Cloudflare and Supabase accounts and settings; no live site is claimed until those steps succeed.
+The paid Render blueprint and disk-based server were removed from this version. The source is prepared for the free setup above. Local browser QA covers login, photo cards, search, filters, casting forms, editing, details, navigation, and sign-out. Live deployment and provider configuration must still be verified separately.
