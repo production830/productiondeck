@@ -42,7 +42,7 @@
   const header=()=>{background();imageFit(logo,18,10,42,9,'tatamata');doc.setFontSize(8);textColor('muted');doc.text('PRODUCTIONDECK / PROJECT DECK',192,15,{align:'right'});rule(23)};
   background();imageFit(logo,18,20,62,14,'tatamata');doc.setFontSize(9);textColor('olive');doc.text('PROJECT DECK',18,58);
   doc.setFontSize(30);textColor('ink');const title=doc.splitTextToSize(clean(name),174);doc.text(title,18,78,{lineHeightFactor:1.25});let coverY=78+(title.length-1)*13.3+13;
-  doc.setFontSize(10);textColor('muted');doc.text(new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})+'  /  '+items.length+' references',18,coverY);coverY+=10;
+  doc.setFontSize(10);textColor('muted');doc.text(new Date().toLocaleDateString('sq-AL',{day:'numeric',month:'long',year:'numeric'})+'  /  '+items.length+' references',18,coverY);coverY+=10;
   doc.setFontSize(8);doc.text(options.internal?'INTERNAL DETAILS INCLUDED':'PROJECT SELECTION',18,coverY);coverY+=10;
   const coverPhotos=photosOf(items.find(item=>photosOf(item).length)||items[0]);const cover=coverPhotos.length?await picture('/media/'+encodeURIComponent(coverPhotos[0]),{signal,refresh}):null;alive(signal);
   const heroHeight=Math.min(105,248-coverY);doc.setFillColor(...color.paper);doc.rect(18,coverY,174,heroHeight,'F');if(cover)imageFit(cover,18,coverY,174,heroHeight,'photo-'+coverPhotos[0]);
@@ -71,13 +71,13 @@
    ensure(101);doc.setFillColor(...color.paper);doc.rect(18,y,174,92,'F');const photos=photosOf(item);
    if(photos.length){const image=cover&&photos[0]===coverPhotos[0]?cover:await picture('/media/'+encodeURIComponent(photos[0]),{signal,refresh});imageFit(image,18,y,174,92,'photo-'+photos[0])}else{doc.setFontSize(10);textColor('muted');doc.text('No photo added',105,y+46,{align:'center'})}y+=101;
    if(options.extraPhotos&&photos.length>1){ensure(39);for(const [at,id] of photos.slice(1,4).entries()){const image=await picture('/media/'+encodeURIComponent(id),{signal,refresh});doc.setFillColor(...color.paper);doc.rect(18+at*59,y,56,33,'F');imageFit(image,18+at*59,y,56,33,'photo-'+id)}y+=41}
-   const fields=[['Subcategories',ProductiondeckTaxonomy.fromItem(item).join(' · ')],['City / area',item.city],['Setting',item.type==='casting'?'':item.setting],['Availability',item.availability],['Tags',(item.tags||[]).join(' · ')]];
+   const fields=[["Nënkategoritë",ProductiondeckTaxonomy.fromItem(item).map(ProductiondeckTaxonomy.label).join(' · ')],["Qyteti",item.city],["Ambienti",item.type==='casting'?'':ProductiondeckTaxonomy.display(item.setting)],["Disponueshmëria",ProductiondeckTaxonomy.display(item.availability)],["Etiketa",(item.tags||[]).join(' · ')]];
    if(item.type==='casting'){
-    const casting=item.casting||{};fields.push(['Playing age',casting.playingAge],['Height',casting.height],['Languages',(casting.languages||[]).join(', ')],['Skills',(casting.skills||[]).join(', ')],['Worked with us',casting.workedBefore==='yes'?'Yes':casting.workedBefore==='no'?'No':'Not recorded'],['Showreel / portfolio',casting.showreel]);
+    const casting=item.casting||{};fields.push(["Mosha për role",casting.playingAge],["Gjatësia",casting.height],["Gjuhët",(casting.languages||[]).join(', ')],["Aftësitë",(casting.skills||[]).join(', ')],["Ka punuar me ne",casting.workedBefore==='yes'?"Po":casting.workedBefore==='no'?"Jo":"Nuk është shënuar"],["Video prezantuese / portfolio",casting.showreel]);
    }
-   if(options.internal)fields.push(['Contact / agent',item.contact],['Address / storage',item.address],['Cost / rental notes',item.cost]);
+   if(options.internal)fields.push(["Kontakti / agjenti",item.contact],["Adresa / ruajtja",item.address],["Kostoja / shënime për qiranë",item.cost]);
    metadata(fields);
-   if(options.notes)block('Production notes',item.notes);
+   if(options.notes)block("Shënime për produksionin",item.notes);
   }
   alive(signal);const total=doc.getNumberOfPages();for(let page=1;page<=total;page++){
    doc.setPage(page);rule(282);doc.setFontSize(7);textColor('muted');doc.text('TATAMATA / '+clean(name).slice(0,70),18,288);doc.text(page+' / '+total,192,288,{align:'right'});

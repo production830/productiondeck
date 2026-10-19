@@ -125,7 +125,7 @@ test('password change verifies old password and clears the current session',asyn
 });
 
 test('casting profiles normalize structured fields and preserve them through shared updates',async()=>{
- const f=fixture();const data={title:'Test talent',type:'casting',category:'Actor',city:'Test City',availability:'Check first',contact:'Agent contact',tags:['comedy'],casting:{playingAge:'25–35',height:'178 cm',languages:['English','Albanian','English'],skills:['Dance','Voice-over'],showreel:'https://example.test/reel',workedBefore:'yes'}};
+ const f=fixture();const data={title:'Test talent',type:'casting',category:'Actor',city:'Prishtina',availability:'Check first',contact:'Agent contact',tags:['comedy'],casting:{playingAge:'25–35',height:'178 cm',languages:['English','Albanian','English'],skills:['Dance','Voice-over'],showreel:'https://example.test/reel',workedBefore:'yes'}};
  const created=await f.req('/api/items',{method:'POST',body:data});assert.equal(created.status,201);const {id}=await created.json();
  const stored=f.tables.items[0].data;assert.equal(stored.type,'casting');assert.deepEqual(stored.casting.languages,['English','Albanian']);assert.equal(stored.casting.workedBefore,'yes');
  let read=await(await f.req('/api/items',{cookie:'__Host-pd_access=crew-token'})).json();assert.equal(read[0].casting.playingAge,'25–35');assert.equal(read[0].casting.showreel,'https://example.test/reel');
@@ -269,18 +269,29 @@ test('Project Decks can be named and edited independently without deleting refer
  assert.equal((await f.req('/api/boards/'+deck.id,{method:'DELETE'})).status,200);assert.equal(f.tables.items.length,2);
 });
 
-test('fixed categories validate up to five predefined subcategories and keep tags independent',async()=>{
- const f=fixture(),data={title:'Reference',type:'location',subcategories:['City','Interior','Apartment','Building','Office'],tags:['custom look']};
+test('fixed categories validate up to ten predefined subcategories and keep tags independent',async()=>{
+ const f=fixture(),data={title:'Reference',type:'location',subcategories:['City','Interior','Apartment','Building','Office','Graffiti','Mural','Wall','Facade','Street Art'],tags:['custom look']};
  const created=await f.req('/api/items',{method:'POST',body:data});assert.equal(created.status,201);const {id}=await created.json();
- const record=f.tables.items.find(x=>x.id===id).data;assert.equal(record.category,'Location');assert.deepEqual(record.subcategories,data.subcategories);assert.deepEqual(record.tags,['custom look']);
- for(const subcategories of [['City','Village','Interior','Exterior','Office','Apartment'],['Made up'],['City',123],null,'Office'])assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,subcategories}})).status,400);
+ const record=f.tables.items.find(x=>x.id===id).data;assert.equal(record.category,'Lokacion');assert.deepEqual(record.subcategories,data.subcategories);assert.deepEqual(record.tags,['custom look']);
+ for(const subcategories of [['City','Village','Interior','Exterior','Office','Apartment','Wall','Graffiti','Mural','Facade','Street Art'],['Made up'],['City',123],null,'Office'])assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,subcategories}})).status,400);
  assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,type:'unknown'}})).status,400);
  assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,subcategories:['office','Office']}})).status,200);assert.deepEqual(f.tables.items[0].data.subcategories,['Office']);
  const edit={title:'Renamed',type:'location',tags:['other manual tag']};assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:edit})).status,200);assert.deepEqual(f.tables.items[0].data.subcategories,['Office']);
 });
 test('legacy read compatibility does not rewrite stored data and edits preserve the previous category',async()=>{
  const f=fixture(),id=crypto.randomUUID();f.tables.items.push({id,created:'2026-01-01',data:{title:'Archive',type:'location',category:'Unusual former category',tags:['keep me']}});
- const read=(await (await f.req('/api/items')).json())[0];assert.equal(read.category,'Location');assert.equal(read.legacyCategory,'Unusual former category');assert.deepEqual(read.subcategories,[]);assert.equal(f.tables.items[0].data.category,'Unusual former category');
+ const read=(await (await f.req('/api/items')).json())[0];assert.equal(read.category,'Lokacion');assert.equal(read.legacyCategory,'Unusual former category');assert.deepEqual(read.subcategories,[]);assert.equal(f.tables.items[0].data.category,'Unusual former category');
  assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{title:'Archive',type:'location',subcategories:['Warehouse'],tags:['keep me']}})).status,200);
  const saved=f.tables.items[0].data;assert.equal(saved.legacyCategory,'Unusual former category');assert.deepEqual(saved.subcategories,['Warehouse']);assert.deepEqual(saved.tags,['keep me']);
+});
+
+test('new city writes use standardized spellings, reject unknown cities and preserve legacy entries on their original records',async()=>{
+ const f=fixture(),data={title:'Mural',type:'location',city:'Prishtina',subcategories:['Grafiti','Mural','Mur'],tags:['manual wording']};
+ let response=await f.req('/api/items',{method:'POST',body:data});assert.equal(response.status,201);const {id}=await response.json();assert.equal(f.tables.items[0].data.city,'Prishtinë');assert.deepEqual(f.tables.items[0].data.subcategories,['Graffiti','Mural','Wall']);
+ response=await f.req('/api/items',{method:'POST',body:{...data,city:'New typo'}});assert.equal(response.status,400);
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'New typo'}});assert.equal(response.status,400);assert.equal(f.tables.items[0].data.city,'Prishtinë');
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'Tirana'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Tiranë');
+ f.tables.items[0].data.city='Old custom area';response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'Old custom area'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Old custom area');
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{title:'Renamed mural',type:'location'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Old custom area');
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{...data,city:'Skopje'}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.city,'Shkup');
 });

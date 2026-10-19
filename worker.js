@@ -15,11 +15,12 @@ const security={
  'Content-Security-Policy':"default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 };
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{...security,'Content-Type':'application/json'}})}
-function itemData(b){
+function itemData(b,previous={}){
  if(!clean(b.title))throw fail(400,'Give this reference a name or title');
  if(!['location','prop','casting'].includes(b.type))throw fail(400,'Choose a location, prop, or casting profile');
- const data={title:clean(b.title),type:b.type,category:taxonomy.labels[b.type],subcategories:taxonomy.fromItem(b),legacyCategory:clean(taxonomy.legacyOf(b),80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',coverImage:clean(b.coverImage,36),tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
- if(Object.hasOwn(b,'subcategories')){if(!Array.isArray(b.subcategories)||b.subcategories.length>5||b.subcategories.some(value=>typeof value!=='string'||!taxonomy.canonical(value)))throw fail(400,'Choose up to 5 subcategories from the fixed list');data.subcategories=[...new Set(b.subcategories.map(taxonomy.canonical))]}
+ const data={title:clean(b.title),type:b.type,category:taxonomy.labels[b.type],subcategories:taxonomy.fromItem(b),legacyCategory:clean(taxonomy.legacyOf(b),80),city:taxonomy.canonicalCity(b.city)||clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',coverImage:clean(b.coverImage,36),tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ if(Object.hasOwn(b,'subcategories')){if(!Array.isArray(b.subcategories)||b.subcategories.length>10||b.subcategories.some(value=>typeof value!=='string'||!taxonomy.canonical(value)))throw fail(400,'Zgjidhni deri në 10 nënkategori nga lista.');data.subcategories=[...new Set(b.subcategories.map(taxonomy.canonical))]}
+ if(data.city&&!taxonomy.canonicalCity(data.city)&&data.city!==previous.city)throw fail(400,'Zgjidhni qytetin nga lista.');
  if(data.coverImage&&!uuid.test(data.coverImage))throw fail(400,'Choose a valid thumbnail photo');
  if(b.type==='casting'){
   const c=b.casting&&typeof b.casting==='object'&&!Array.isArray(b.casting)?b.casting:{};
@@ -191,7 +192,8 @@ export function createHandler(fetcher=fetch){
    if(match&&['PUT','DELETE'].includes(request.method)){
     const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length)throw fail(404,'Reference not found');
     if(request.method==='PUT'){
-     const b=await body(request),data=itemData(b);
+     const b=await body(request),data=itemData(b,rows[0].data);
+     if(!Object.hasOwn(b,'city'))data.city=taxonomy.canonicalCity(rows[0].data.city)||rows[0].data.city||'';
      if(!Object.hasOwn(b,'subcategories'))data.subcategories=taxonomy.fromItem(rows[0].data);
      data.legacyCategory=clean(taxonomy.legacyOf(rows[0].data)||taxonomy.legacyOf(b),80);
      if(!Object.hasOwn(b,'coverImage'))data.coverImage=rows[0].data.coverImage||'';
