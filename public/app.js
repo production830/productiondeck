@@ -86,15 +86,45 @@ function openEditor(item){
  }else if(['location','prop','casting'].includes(state.view)){form.elements.type.value=state.view}
  syncEditorType();$('#editor-title').textContent=item?(item.type==='casting'?'Edit talent':'Edit reference'):(form.elements.type.value==='casting'?'Add talent':'Add a reference');$('#editor').showModal();
 }
+let activeDetail=null;
+const photoArrow=direction=>`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${direction==='previous'?'m14 6-6 6 6 6':'m10 6 6 6-6 6'}"/></svg>`;
+function photoViewer(item){
+ const photos=item.images||[];
+ if(!photos.length)return '<div class="photo-empty">No photos added yet.</div>';
+ return `<section class="photo-viewer" aria-label="${esc(item.title)} photos"><div class="photo-stage" id="photo-stage"><img id="detail-photo" src="/media/${photos[0]}" alt="${esc(item.title)} — photo 1 of ${photos.length}">${photos.length>1?`<button type="button" class="photo-arrow photo-previous" id="photo-previous" aria-label="Previous photo">${photoArrow('previous')}</button><button type="button" class="photo-arrow photo-next" id="photo-next" aria-label="Next photo">${photoArrow('next')}</button>`:''}</div><div class="photo-caption"><span id="photo-position" role="status" aria-live="polite">Photo 1 of ${photos.length}</span><a id="photo-open" href="/media/${photos[0]}" target="_blank" rel="noopener">Open image ↗</a></div>${photos.length>1?`<div class="photo-thumbnails" aria-label="Choose a photo">${photos.map((im,index)=>`<button type="button" class="photo-thumbnail" data-photo-index="${index}" aria-label="View photo ${index+1}" aria-current="${index===0?'true':'false'}"><img src="/media/${im}" alt="" loading="lazy"></button>`).join('')}</div>`:''}</section>`;
+}
+function setDetailPhoto(index){
+ const item=activeDetail&&state.items.find(x=>x.id===activeDetail.id),photos=item?.images||[];
+ if(!photos.length||!$('#detail').open)return;
+ activeDetail.index=(index+photos.length)%photos.length;
+ const at=activeDetail.index;$('#detail-photo').src='/media/'+photos[at];$('#detail-photo').alt=item.title+' — photo '+(at+1)+' of '+photos.length;
+ $('#photo-position').textContent='Photo '+(at+1)+' of '+photos.length;$('#photo-open').href='/media/'+photos[at];
+ $$('#detail [data-photo-index]').forEach(button=>button.setAttribute('aria-current',String(Number(button.dataset.photoIndex)===at)));
+ const selected=$('#detail [data-photo-index="'+at+'"]'),strip=selected?.parentElement;
+ if(selected&&strip){if(selected.offsetLeft<strip.scrollLeft)strip.scrollLeft=selected.offsetLeft;else if(selected.offsetLeft+selected.offsetWidth>strip.scrollLeft+strip.clientWidth)strip.scrollLeft=selected.offsetLeft+selected.offsetWidth-strip.clientWidth}
+}
+function relatedRecords(item){
+ if(!['location','prop'].includes(item.type))return '';
+ const matches=ProductiondeckSimilarity.findSimilar(item,state.items),label=item.type==='location'?'Similar locations':'Similar props';
+ return `<section class="related-section" aria-labelledby="related-title"><div class="related-heading"><h3 id="related-title">${label}</h3><span>Shared tags & category</span></div>${matches.length?`<div class="related-grid">${matches.map(({item:other,sharedTags,sameCategory})=>`<button class="related-card" type="button" data-related-id="${other.id}" aria-label="Open ${esc(other.title)}"><div class="related-image">${other.images?.length?`<img src="/media/${other.images[0]}" alt="" loading="lazy">`:`<span aria-hidden="true">${kindIcon[other.type]}</span>`}</div><div class="related-info"><strong>${esc(other.title)}</strong><small>${esc([other.category,other.city].filter(Boolean).join(' · '))}</small><div class="related-reasons">${sharedTags.slice(0,3).map(tag=>`<span>${esc(tag)}</span>`).join('')}${!sharedTags.length&&sameCategory?'<span>Same category</span>':''}</div></div></button>`).join('')}</div>`:'<p class="related-empty">No matching references yet. Shared tags and categories will bring similar finds here as your library grows.</p>'}</section>`;
+}
 function openDetail(id){
- const x=state.items.find(i=>i.id===id);if(!x)return;const talent=x.type==='casting',c=x.casting||{};
+ const x=state.items.find(i=>i.id===id);if(!x)return;activeDetail={id,index:0};const talent=x.type==='casting',c=x.casting||{};
  const pairs=talent?[['Talent type',x.category],['Based in',x.city],['Playing age',c.playingAge],['Height',c.height],['Languages',(c.languages||[]).join(', ')],['Skills',(c.skills||[]).join(', ')],['Worked with us',c.workedBefore==='yes'?'Yes':c.workedBefore==='no'?'No — new talent':'Not recorded'],['Availability',x.availability],['Contact / agent',x.contact],['Fee / day rate',x.cost]]:[['City / area',x.city],['Setting',x.setting],['Availability',x.availability],['Cost',x.cost],['Address / storage',x.address],['Contact',x.contact]];
  let showreel='';try{const u=new URL(c.showreel);if(u.protocol==='https:')showreel=u.href}catch{}
- $('#detail-content').innerHTML=`<div class="modal-head"><div><p class="eyebrow">${talent?'CASTING':x.type.toUpperCase()} / ${esc(x.category||'REFERENCE')}</p><h2>${esc(x.title)}</h2></div><button class="icon close" aria-label="Close">×</button></div><div class="gallery ${talent?'talent-gallery':''}">${x.images.map(im=>`<a href="/media/${im}" target="_blank" rel="noopener"><img src="/media/${im}" alt="${esc(x.title)}"></a>`).join('')}</div><div class="card-tags">${x.tags.map(t=>`<span>${esc(t)}</span>`).join('')}</div><dl class="detail-data">${pairs.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'—')}</dd></div>`).join('')}</dl>${showreel?`<a class="showreel-link secondary" href="${esc(showreel)}" target="_blank" rel="noopener noreferrer">Open showreel / portfolio ↗</a>`:''}${x.notes?`<h3>${talent?'Experience & casting notes':'Production notes'}</h3><p class="detail-notes">${esc(x.notes)}</p>`:''}<div class="detail-controls"><button class="secondary" id="edit-detail">${talent?'Edit talent':'Edit reference'}</button><select id="detail-board" aria-label="Choose shortlist"><option value="">Add to shortlist…</option>${state.boards.map(b=>`<option value="${b.id}">${esc(b.name)}${b.items.includes(id)?' ✓':''}</option>`).join('')}</select><button class="text-button" id="delete-detail">${talent?'Delete profile':'Delete reference'}</button></div><p id="detail-error" role="alert"></p>`;
+ $('#detail-content').innerHTML=`<div class="modal-head"><div><p class="eyebrow">${talent?'CASTING':x.type.toUpperCase()} / ${esc(x.category||'REFERENCE')}</p><h2 id="detail-title" tabindex="-1">${esc(x.title)}</h2></div><button class="icon close" aria-label="Close">×</button></div>${photoViewer(x)}${relatedRecords(x)}<div class="card-tags">${x.tags.map(t=>`<span>${esc(t)}</span>`).join('')}</div><dl class="detail-data">${pairs.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'—')}</dd></div>`).join('')}</dl>${showreel?`<a class="showreel-link secondary" href="${esc(showreel)}" target="_blank" rel="noopener noreferrer">Open showreel / portfolio ↗</a>`:''}${x.notes?`<h3>${talent?'Experience & casting notes':'Production notes'}</h3><p class="detail-notes">${esc(x.notes)}</p>`:''}<div class="detail-controls"><button class="secondary" id="edit-detail">${talent?'Edit talent':'Edit reference'}</button><select id="detail-board" aria-label="Choose shortlist"><option value="">Add to shortlist…</option>${state.boards.map(b=>`<option value="${b.id}">${esc(b.name)}${b.items.includes(id)?' ✓':''}</option>`).join('')}</select><button class="text-button" id="delete-detail">${talent?'Delete profile':'Delete reference'}</button></div><p id="detail-error" role="alert"></p>`;
  $('#edit-detail').onclick=()=>{$('#detail').close();openEditor(x)};
  $('#delete-detail').onclick=async()=>{if(!confirm(`Delete “${x.title}” and its photos?`))return;try{await api('items/'+id,{method:'DELETE'});$('#detail').close();await load()}catch(e){$('#detail-error').textContent=e.message}};
  $('#detail-board').onchange=async e=>{const b=state.boards.find(b=>b.id===e.target.value);if(!b)return;try{const already=b.items.includes(id);await post('boards/'+b.id,{items:already?b.items.filter(i=>i!==id):[...b.items,id]},'PUT');await load();$('#detail-error').textContent=already?'Removed from '+b.name:'Added to '+b.name;e.target.value=''}catch(err){$('#detail-error').textContent=err.message}};
+ $('#detail').setAttribute('aria-labelledby','detail-title');
  if(!$('#detail').open)$('#detail').showModal();
+ $('#detail').scrollTop=0;$('#detail-title').focus({preventScroll:true});
+ if($('#photo-previous'))$('#photo-previous').onclick=()=>setDetailPhoto(activeDetail.index-1);
+ if($('#photo-next'))$('#photo-next').onclick=()=>setDetailPhoto(activeDetail.index+1);
+ $$('#detail [data-photo-index]').forEach(button=>button.onclick=()=>setDetailPhoto(Number(button.dataset.photoIndex)));
+ $$('#detail [data-related-id]').forEach(button=>button.onclick=()=>openDetail(button.dataset.relatedId));
+ const stage=$('#photo-stage');if(stage){let start=null;stage.onpointerdown=e=>{if(e.pointerType==='touch')start={x:e.clientX,y:e.clientY}};stage.onpointercancel=()=>{start=null};stage.onpointerup=e=>{if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy))setDetailPhoto(activeDetail.index+(dx<0?1:-1))}}
+
 }
 async function team(){
  const users=await api('users');$('#members').innerHTML=users.map(u=>`<div class="member"><div>${esc(u.name)}${u.admin?' · Admin':''}<small>${esc(u.email)}</small></div>${u.id!==state.user.id?`<div class="member-actions"><button class="text-button" data-reset-user="${u.id}" data-reset-name="${esc(u.name)}">Reset password</button><button class="text-button" data-remove-user="${u.id}">Remove access</button></div>`:''}</div>`).join('');
@@ -159,3 +189,9 @@ $('#test-teammate-login').onclick=async()=>{
  catch(err){$('#reset-teammate-error').textContent=err.message+(err.code?' (Code: '+err.code+')':'')}
  finally{button.disabled=false;form.querySelector('button.primary').disabled=false}
 };
+
+document.addEventListener('keydown',e=>{
+ if(!$('#detail').open||!activeDetail||!['ArrowLeft','ArrowRight'].includes(e.key)||e.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+ e.preventDefault();setDetailPhoto(activeDetail.index+(e.key==='ArrowRight'?1:-1));
+});
+$('#detail').addEventListener('close',()=>{activeDetail=null});

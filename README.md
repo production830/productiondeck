@@ -71,6 +71,12 @@ Sign-in errors distinguish incorrect credentials, accounts needing confirmation,
 
 There is no public registration or in-app password-reset email flow. If an administrator loses their password, the Supabase project owner can use Auth administration to reset that user's password. Do not delete project data to reset an account.
 
+## Browsing record photos and related references
+
+Open a location, prop, or talent record to see one large photo. Use the left/right buttons, arrow keys, or thumbnails to change photos; on touchscreens, swipe horizontally. Navigation loops through all photos. Single-photo records have no navigation arrows, and records without photos show an empty state. **Open image** opens the current photo separately.
+
+Locations and props show **Similar locations** or **Similar props** directly below the viewer. Suggestions come from other records of the same type across the authorized library, ranked mainly by shared tags and then by category. Shared tags are shown on each suggestion. This is metadata matching, not AI image recognition. It does not call external services or incur image-analysis fees. If nothing shares tags or category, no unrelated fallback suggestions are shown. Add descriptive tags for more useful matches.
+
 ## Casting sheet
 
 Choose **Casting** in navigation and click **Add talent**. Use the name as the title and choose a talent type or role (actor, model, voice artist, extra, presenter, etc.). Add headshots, playing age, height, languages, skills, contact/agent details, fee notes, availability, previous experience, and an HTTPS showreel/portfolio link. Mark whether the person has worked with the team before; leave unknown information as **Not recorded**.
@@ -89,7 +95,7 @@ Deleting a reference permanently deletes its browsing photos. Deleting a shortli
 
 ## Local development and verification
 
-Requires Node.js 22 or later. `npm test` runs the Worker handler tests directly against a simulated Supabase HTTP service, with no real credentials or live database. `npm run check` checks JavaScript syntax. These checks cover access control, private photos, refresh behavior, shared CRUD, shortlists, upload cleanup, membership revocation, and catalog pagination. They do not prove live Supabase configuration, Cloudflare deployment, live provider quotas. The light layout and casting interactions were also checked locally on desktop and mobile using simulated records, without changing the live library.
+Requires Node.js 22 or later. `npm test` runs the related-record ranking tests and Worker handler tests against a simulated Supabase HTTP service, with no real credentials or live database. `npm run check` checks JavaScript syntax. These checks cover access control, private photos, refresh behavior, shared CRUD, shortlists, upload cleanup, membership revocation, and catalog pagination. They do not prove live Supabase configuration, Cloudflare deployment, live provider quotas. The light layout and casting interactions were also checked locally on desktop and mobile using simulated records, without changing the live library.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars`, fill it using a dedicated Supabase **test** project, and run `npm run dev`. Wrangler is fetched through `npx`. Production cookies use Secure and the `__Host-` prefix; use a local HTTPS preview for browser sign-in. Do not commit `.dev.vars`.
 

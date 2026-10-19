@@ -272,3 +272,42 @@ footer > span, .login-story-bottom { color: #667a52; }
 @media(max-width:360px) { .grid[data-kind="casting"] { grid-template-columns:1fr; } }
 
 .member-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}.member-actions .text-button{font-size:11px}#reset-teammate-error{color:#b74728;font-size:12px}#reset-teammate-form>p{font-size:13px;color:#566448}@media(max-width:500px){.member{align-items:flex-start}.member-actions{max-width:110px;flex-direction:column;align-items:flex-end}.member-actions .text-button{padding:5px 0}}
+
+/* Record photo viewer and metadata-based related references. */
+#detail { width:min(1060px,94vw); }
+#detail-title:focus { outline:none; }
+.photo-viewer { margin-bottom:25px; }
+.photo-stage { position:relative; height:clamp(230px,48vh,540px); display:flex; align-items:center; justify-content:center; border:1px solid #e0e5d8; border-radius:8px; overflow:hidden; background:#eff1e9; touch-action:pan-y; }
+.photo-stage > img { width:100%; height:100%; object-fit:contain; display:block; }
+.photo-arrow { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px; display:grid; place-items:center; border-radius:50%; background:#fffffff2; color:#27331d; border:1px solid #ffffff; box-shadow:0 2px 12px #1a281126; }
+.photo-arrow:hover { background:#ffffff; box-shadow:0 2px 14px #1a281144; }
+.photo-arrow:focus-visible { outline:2px solid #526e34; outline-offset:3px; }
+.photo-previous { left:14px; }.photo-next { right:14px; }
+.photo-caption { display:flex; justify-content:space-between; gap:15px; margin:10px 1px 12px; font-size:11px; color:#657450; }
+.photo-caption a { color:#3b5129; }.photo-caption a:hover { text-decoration:underline; }
+.photo-thumbnails { display:flex; gap:8px; overflow-x:auto; padding:3px 2px 8px; position:relative; }
+.photo-thumbnail { width:76px; height:54px; flex-shrink:0; padding:2px; border:2px solid transparent; background:#f0f3eb; border-radius:5px; overflow:hidden; }
+.photo-thumbnail img { width:100%; height:100%; display:block; object-fit:cover; border-radius:2px; }
+.photo-thumbnail[aria-current="true"] { border-color:#415d2a; background:#ffffff; }
+.photo-empty { min-height:180px; display:grid; place-items:center; background:#f2f5ed; border:1px dashed #d3ddc6; border-radius:8px; color:#71825e; font-size:13px; margin-bottom:25px; }
+.related-section { padding:22px 0 25px; border-top:1px solid #e1e7d9; border-bottom:1px solid #e1e7d9; margin-bottom:23px; }
+.related-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:15px; }
+.related-heading h3 { font-size:16px; letter-spacing:-.3px; margin:0; font-weight:600; color:#2b3a1f; }
+.related-heading > span { font-size:10px; color:#76865f; }
+.related-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.related-card { min-width:0; text-align:left; border:1px solid #dfe6d6; border-radius:7px; padding:0; overflow:hidden; background:#ffffff; }
+.related-card:hover { border-color:#8da875; }
+.related-image { aspect-ratio:16/10; background:#eff3e8; display:grid; place-items:center; color:#90a779; font-size:32px; overflow:hidden; }
+.related-image img { width:100%; height:100%; object-fit:cover; display:block; }
+.related-info { padding:11px; }.related-info strong { display:block; color:#314522; font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+.related-info small { display:block; font-size:10px; color:#7b8e66; margin-top:4px; }
+.related-reasons { display:flex; flex-wrap:wrap; gap:4px; margin-top:9px; }
+.related-reasons span { font-size:9px; color:#617d45; background:#f0f5e8; padding:2px 5px; border-radius:3px; }
+.related-empty { font-size:12px; color:#768a62; line-height:1.7; margin:0; }
+@media(max-width:700px) {
+ #detail { width:96vw; padding:18px; }.photo-stage { height:clamp(230px,44vh,380px); }
+ .photo-arrow { width:38px; height:38px; }.photo-previous{left:9px}.photo-next{right:9px}
+ .photo-thumbnail { width:62px; height:46px; }.related-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+ .related-heading { align-items:flex-start; flex-direction:column; gap:5px; }
+ .related-info { padding:9px; }.related-section { padding:20px 0; }
+}
