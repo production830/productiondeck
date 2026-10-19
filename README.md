@@ -16,7 +16,7 @@ Photos are converted in your browser to JPEG, maximum 1600 pixels along the long
 
 1. Sign up at [Supabase](https://supabase.com/dashboard) using your company account. Choose a **Free** organization and create a **dedicated new project** named `productiondeck`.
 2. Save your database password privately. It is not a website login and is not an app setting.
-3. Open **SQL Editor**, create a query, paste all of [`supabase/migrations/001_productiondeck.sql`](supabase/migrations/001_productiondeck.sql), and run it. The query creates four `pd_` tables and a **private** `productiondeck-photos` bucket. Keep that bucket private and do not add public storage policies.
+3. Open **SQL Editor**, create a query, paste all of [`supabase/migrations/001_productiondeck.sql`](supabase/migrations/001_productiondeck.sql), and run it. Then run [`supabase/migrations/002_twenty_photos.sql`](supabase/migrations/002_twenty_photos.sql) to enable 20-photo records. These queries create four `pd_` tables and a **private** `productiondeck-photos` bucket. Keep that bucket private and do not add public storage policies.
 4. In **Authentication → Sign In / Providers**, disable **Allow new users to sign up**. Password/email sign-in must remain enabled. The admin API can create coworkers while public signup is disabled.
 5. Open **Authentication → Users → Add user → Create new user**. Enter your company administrator email and a unique password of at least 12 characters. Enable **Auto Confirm User** when available. This creates your first website account without requiring an invitation email.
 6. In SQL Editor, run the following after replacing `YOUR_ADMIN_EMAIL` privately with the email you just used:
@@ -70,6 +70,12 @@ To investigate a failed reset without changing the password again, open that tea
 Sign-in errors distinguish incorrect credentials, accounts needing confirmation, disabled email/password sign-in, expired sessions, rate limiting, and temporary upstream outages. If the Email provider is disabled, enable it under Supabase Authentication's email provider settings while keeping public signup off. Browser session failures after an otherwise successful login have their own message. Concurrent API calls share one session refresh, and temporary upstream outages preserve existing session cookies.
 
 There is no public registration or in-app password-reset email flow. If an administrator loses their password, the Supabase project owner can use Auth administration to reset that user's password. Do not delete project data to reset an account.
+
+## Photo limits
+
+Locations and props support **20 photos per record**; casting profiles support **12**. Existing photos count toward the total. Each selected input photo must be no larger than 8 MB, and browsing copies are resized before upload.
+
+For an existing project created before this update, run [`002_twenty_photos.sql`](supabase/migrations/002_twenty_photos.sql) in Supabase SQL Editor with **Database** selected. It expands the existing photo slot check without deleting rows or storage files. The app alone cannot apply this database migration. Until it is run, the database rejects photos beyond the old 12-photo capacity and the app shows a setup message.
 
 ## Browsing record photos and related references
 

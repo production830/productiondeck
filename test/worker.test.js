@@ -99,7 +99,7 @@ test('upload validation, reservation rollback, max photos and missing records',a
  const f=fixture();await f.req('/api/items',{method:'POST',body:{title:'Chair',type:'prop'}});const id=f.tables.items[0].id;
  let r=await f.req('/api/items/'+id+'/images',{method:'POST',body:new TextEncoder().encode('<svg>')});assert.equal(r.status,400);assert.equal(f.tables.images.length,0);
  const photo=Uint8Array.from([255,216,255,0]);f.setStorageFailure(true);r=await f.req('/api/items/'+id+'/images',{method:'POST',body:photo});assert.equal(r.status,502);assert.equal(f.tables.images.length,0);
- f.setStorageFailure(false);for(let slot=0;slot<12;slot++)f.tables.images.push({id:crypto.randomUUID(),item_id:id,slot,mime:'image/jpeg'});
+ f.setStorageFailure(false);for(let slot=0;slot<20;slot++)f.tables.images.push({id:crypto.randomUUID(),item_id:id,slot,mime:'image/jpeg'});
  assert.equal((await f.req('/api/items/'+id+'/images',{method:'POST',body:photo})).status,400);
  assert.equal((await f.req('/api/items/not-an-id',{method:'DELETE'})).status,404);
  assert.equal((await f.req('/api/items',{method:'POST',body:{title:'Invalid',type:'script'}})).status,400);
@@ -218,4 +218,28 @@ test('an invalid Supabase API key is not reported as incorrect teammate credenti
  const f=fixture();const handle=createHandler(async()=>new Response(JSON.stringify({message:'Invalid API key'}),{status:401}));
  const r=await handle(new Request('https://library.example/api/login',{method:'POST',headers:{Origin:'https://library.example'},body:JSON.stringify({email:'crew@example.test',password:'test-password'})}),f.env);
  assert.equal(r.status,503);assert.equal((await r.json()).code,'auth_key_invalid');
+});
+
+test('locations and props accept photos 13 through 20 and reject a 21st',async()=>{
+ for(const type of ['location','prop']){
+  const f=fixture();const item=await(await f.req('/api/items',{method:'POST',body:{title:'Photo limit test',type}})).json();
+  for(let slot=0;slot<12;slot++)f.tables.images.push({id:crypto.randomUUID(),item_id:item.id,slot,mime:'image/jpeg'});
+  for(let n=13;n<=20;n++){
+   const r=await f.req('/api/items/'+item.id+'/images',{method:'POST',body:Uint8Array.from([255,216,255,0])});assert.equal(r.status,201,'Photo '+n+' for '+type);
+  }
+  assert.equal(f.tables.images.length,20);assert.equal(f.tables.images.at(-1).slot,19);
+  const r=await f.req('/api/items/'+item.id+'/images',{method:'POST',body:Uint8Array.from([255,216,255,0])});assert.equal(r.status,400);assert.match((await r.json()).error,/Maximum 20/);assert.equal(f.tables.images.length,20);
+ }
+});
+test('casting keeps its 12-photo limit and existing slots can be filled',async()=>{
+ const f=fixture();const item=await(await f.req('/api/items',{method:'POST',body:{title:'Casting photo test',type:'casting'}})).json();
+ for(let slot=0;slot<12;slot++)if(slot!==5)f.tables.images.push({id:crypto.randomUUID(),item_id:item.id,slot,mime:'image/jpeg'});
+ assert.equal((await f.req('/api/items/'+item.id+'/images',{method:'POST',body:Uint8Array.from([255,216,255,0])})).status,201);assert.equal(f.tables.images.at(-1).slot,5);
+ const r=await f.req('/api/items/'+item.id+'/images',{method:'POST',body:Uint8Array.from([255,216,255,0])});assert.equal(r.status,400);assert.match((await r.json()).error,/Maximum 12/);
+});
+test('a database still using the old photo cap produces an actionable migration error',async()=>{
+ const f=fixture();const item=await(await f.req('/api/items',{method:'POST',body:{title:'Migration test',type:'location'}})).json();
+ const handle=createHandler(async(url,options)=>new URL(url).pathname==='/rest/v1/pd_images'&&options.method==='POST'?new Response(JSON.stringify({code:'23514'}),{status:400}):f.upstream(url,options));
+ const r=await handle(new Request('https://library.example/api/items/'+item.id+'/images',{method:'POST',headers:{Origin:'https://library.example',Cookie:'__Host-pd_access=admin-token'},body:Uint8Array.from([255,216,255,0])}),f.env);
+ assert.equal(r.status,503);const b=await r.json();assert.equal(b.code,'photo_limit_migration_required');assert.match(b.error,/002_twenty_photos/);assert.equal(f.objects.size,0);
 });

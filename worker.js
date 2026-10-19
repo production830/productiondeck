@@ -87,6 +87,7 @@ export function createHandler(fetcher=fetch){
       if(path.includes('grant_type=password')&&(['invalid_credentials','invalid_grant'].includes(code)||!code&&[400,422].includes(response.status)))throw fail(401,'Email or password is incorrect. Use the password set for this library. Your administrator can reset it in Manage team.','invalid_credentials');
      }
      if(auth&&path.includes('/token'))throw fail(503,'The authentication service rejected sign-in for a reason other than a confirmed password mismatch. Check Supabase Authentication logs.','auth_request_rejected');
+     if(code==='23514'&&path.startsWith('/rest/v1/pd_images'))throw fail(503,'The database photo limit needs updating. Run 002_twenty_photos.sql from the project repository in Supabase SQL Editor.','photo_limit_migration_required');
      if(response.status===409||code==='23505')throw fail(409,'This record already exists. Refresh and try again.');
      throw fail(502,'Could not complete the request. Check the library configuration and try again.');
     }
@@ -193,8 +194,9 @@ export function createHandler(fetcher=fetch){
    }
    match=p.match(/^\/api\/items\/([^/]+)\/images$/);
    if(match&&request.method==='POST'){
-    const item_id=checkId(match[1]);if(!(await rest('items','id=eq.'+item_id+'&select=id')).length)throw fail(404,'Reference not found');
-    const taken=await rest('images','item_id=eq.'+item_id+'&select=slot');let slot=0;while(taken.some(im=>im.slot===slot))slot++;if(slot===12)throw fail(400,'Maximum 12 photos per reference');
+    const item_id=checkId(match[1]),records=await rest('items','id=eq.'+item_id+'&select=id,data');if(!records.length)throw fail(404,'Reference not found');
+    const photoLimit=['location','prop'].includes(records[0].data?.type)?20:12;
+    const taken=await rest('images','item_id=eq.'+item_id+'&select=slot');let slot=0;while(taken.some(im=>im.slot===slot))slot++;if(slot>=photoLimit)throw fail(400,'Maximum '+photoLimit+' photos for this reference');
     const data=await bytes(request,8*1024*1024),mime=imageMime(data),id=crypto.randomUUID();
     // Unique slots enforce the limit even when coworkers upload at the same time.
     await rest('images','',{method:'POST',data:{id,item_id,mime,slot}});
