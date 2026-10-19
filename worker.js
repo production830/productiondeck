@@ -16,7 +16,8 @@ function json(value,status=200){return new Response(JSON.stringify(value),{statu
 function itemData(b){
  if(!clean(b.title))throw fail(400,'Give this reference a name or title');
  if(!['location','prop','casting'].includes(b.type))throw fail(400,'Choose a location, prop, or casting profile');
- const data={title:clean(b.title),type:b.type,category:clean(b.category,80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ const data={title:clean(b.title),type:b.type,category:clean(b.category,80),city:clean(b.city,120),setting:clean(b.setting,40),availability:clean(b.availability,40)||'Available',coverImage:clean(b.coverImage,36),tags:[...new Set((Array.isArray(b.tags)?b.tags:[]).map(t=>clean(t,50)).filter(Boolean))].slice(0,30),notes:clean(b.notes,5000),contact:clean(b.contact,500),address:clean(b.address,500),cost:clean(b.cost,100)};
+ if(data.coverImage&&!uuid.test(data.coverImage))throw fail(400,'Choose a valid thumbnail photo');
  if(b.type==='casting'){
   const c=b.casting&&typeof b.casting==='object'&&!Array.isArray(b.casting)?b.casting:{};
   const list=(v,max)=>[...new Set((Array.isArray(v)?v:[]).map(x=>clean(x,max)).filter(Boolean))].slice(0,20);
@@ -181,12 +182,17 @@ export function createHandler(fetcher=fetch){
     return finish(json(items.map(r=>({...r.data,id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
    if(p==='/api/items'&&request.method==='POST'){
-    const data=itemData(await body(request)),id=crypto.randomUUID();await rest('items','',{method:'POST',data:{id,data}});return finish(json({id},201));
+    const data=itemData(await body(request)),id=crypto.randomUUID();if(data.coverImage)throw fail(400,'Upload photos before choosing a thumbnail');await rest('items','',{method:'POST',data:{id,data}});return finish(json({id},201));
    }
    match=p.match(/^\/api\/items\/([^/]+)$/);
    if(match&&['PUT','DELETE'].includes(request.method)){
-    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id');if(!rows.length)throw fail(404,'Reference not found');
-    if(request.method==='PUT'){await rest('items','id=eq.'+id,{method:'PATCH',data:{data:itemData(await body(request))}});return finish(json({ok:true}))}
+    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length)throw fail(404,'Reference not found');
+    if(request.method==='PUT'){
+     const b=await body(request),data=itemData(b);
+     if(!Object.hasOwn(b,'coverImage'))data.coverImage=rows[0].data.coverImage||'';
+     if(data.coverImage&&!(await rest('images','id=eq.'+data.coverImage+'&item_id=eq.'+id+'&select=id')).length)throw fail(400,'Choose a thumbnail from this reference’s photos');
+     await rest('items','id=eq.'+id,{method:'PATCH',data:{data}});return finish(json({ok:true}));
+    }
     const images=await rest('images','item_id=eq.'+id+'&select=id');
     // Delete stored bytes before removing their metadata, so a storage failure can be retried.
     if(images.length)await upstream('/storage/v1/object/'+bucket,{method:'DELETE',data:{prefixes:images.map(im=>im.id)}});
@@ -210,14 +216,17 @@ export function createHandler(fetcher=fetch){
    }
    if(p==='/api/boards'&&request.method==='GET')return finish(json(await rest('boards','select=id,name,items&order=name&limit=1000')));
    if(p==='/api/boards'&&request.method==='POST'){
-    const b=await body(request),name=clean(b.name,100);if(!name)throw fail(400,'Name your shortlist');const id=crypto.randomUUID();await rest('boards','',{method:'POST',data:{id,name}});return finish(json({id},201));
+    const b=await body(request),name=clean(b.name,100);if(!name)throw fail(400,'Name your Project Deck');const items=b.items===undefined?[]:b.items;if(!Array.isArray(items)||items.length>500||items.some(id=>typeof id!=='string'||!uuid.test(id)))throw fail(400,'Invalid Project Deck selection');const id=crypto.randomUUID();await rest('boards','',{method:'POST',data:{id,name,items:[...new Set(items)]}});return finish(json({id},201));
    }
    match=p.match(/^\/api\/boards\/([^/]+)$/);
    if(match&&['PUT','DELETE'].includes(request.method)){
-    const id=checkId(match[1]);if(!(await rest('boards','id=eq.'+id+'&select=id')).length)throw fail(404,'Shortlist not found');
+    const id=checkId(match[1]);if(!(await rest('boards','id=eq.'+id+'&select=id')).length)throw fail(404,'Project Deck not found');
     if(request.method==='DELETE'){await rest('boards','id=eq.'+id,{method:'DELETE'});return finish(json({ok:true}))}
-    const b=await body(request);if(!Array.isArray(b.items)||b.items.length>500||b.items.some(id=>typeof id!=='string'||!uuid.test(id)))throw fail(400,'Invalid shortlist');
-    await rest('boards','id=eq.'+id,{method:'PATCH',data:{items:[...new Set(b.items)]}});return finish(json({ok:true}));
+    const b=await body(request),data={};
+    if(Object.hasOwn(b,'name')){data.name=clean(b.name,100);if(!data.name)throw fail(400,'Name your Project Deck')}
+    if(Object.hasOwn(b,'items')){if(!Array.isArray(b.items)||b.items.length>500||b.items.some(id=>typeof id!=='string'||!uuid.test(id)))throw fail(400,'Invalid Project Deck selection');data.items=[...new Set(b.items)]}
+    if(!Object.keys(data).length)throw fail(400,'Choose a name or references to update');
+    await rest('boards','id=eq.'+id,{method:'PATCH',data});return finish(json({ok:true}));
    }
    throw fail(404,'Not found');
   }catch(e){return finish(json({error:e.status?e.message:'Something went wrong. Please try again.',...(e.code?{code:e.code}:{})},e.status||500))}

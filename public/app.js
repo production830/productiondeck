@@ -1,4 +1,5 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const homeReady=document.body.dataset.homeReady==='true';
 const state={items:[],boards:[],view:'all',tag:'',user:null};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let sessionRefresh=null;
@@ -20,11 +21,12 @@ async function api(path,options={}){
  return b;
 }
 const post=(path,b,method='POST')=>api(path,{method,body:JSON.stringify(b)});
-function showLogin(){$('#login').hidden=false;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
+function showLogin(){state.user=null;const home=homeReady&&(!location.hash||location.hash==='#home');$('#home').hidden=!home;$('#login').hidden=home;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
 function error(e){$('#notice').textContent=e.message}
 async function load(){[state.items,state.boards]=await Promise.all([api('items'),api('boards')]);render()}
 const kindName={location:'Location',prop:'Prop',casting:'Casting'};
 const kindIcon={location:'⌖',prop:'◇',casting:'◎'};
+const galleryPhotos=item=>{const photos=item.images||[];return item.coverImage&&photos.includes(item.coverImage)?[item.coverImage,...photos.filter(id=>id!==item.coverImage)]:photos};
 const maxPhotosFor=type=>['location','prop'].includes(type)?20:12;
 const castList=value=>String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
 function renderOptions(){
@@ -59,12 +61,12 @@ function render(){
  const language=casting?$('#filter-language').value:'',skill=casting?$('#filter-skill').value:'',history=casting?$('#filter-history').value:'';
  let items=scope.filter(x=>(!state.tag||x.tags.includes(state.tag))&&Object.entries(filters).every(([k,v])=>!v||x[k]===v)&&(!language||x.casting?.languages?.includes(language))&&(!skill||x.casting?.skills?.includes(skill))&&(!history||(x.casting?.workedBefore||'unknown')===history)&&query.every(q=>[x.title,x.category,x.city,x.notes,x.address,x.contact,x.casting?.playingAge,...(x.casting?.languages||[]),...(x.casting?.skills||[]),...x.tags].join(' ').toLowerCase().includes(q)));
  const sort=$('#sort').value;if(sort==='az')items.sort((a,b)=>a.title.localeCompare(b.title));else if(sort==='old')items.reverse();
- $('#result-count').textContent=items.length;$('#result-label').textContent=casting?(items.length===1?'talent profile':'talent profiles'):(items.length===1?'reference':'references');$('#delete-board').hidden=!board;
+ $('#result-count').textContent=items.length;$('#result-label').textContent=casting?(items.length===1?'talent profile':'talent profiles'):(items.length===1?'reference':'references');$('#delete-board').hidden=!board;$('#edit-board').hidden=!board;
  const active=Object.values(filters).filter(Boolean).length+[state.tag,language,skill,history].filter(Boolean).length;$('#filter-count').textContent=active?'('+active+')':'';
  $('#grid').innerHTML=items.length?items.map(x=>{
   const talent=x.type==='casting',meta=talent?[x.category,x.city,x.casting?.playingAge&&'Playing age '+x.casting.playingAge]:[x.city,x.category];
   const chips=[...(talent?x.casting?.languages||[]:[]),...x.tags].slice(0,3);
-  return `<article class="card ${talent?'talent-card':''}"><button class="card-open" data-open="${x.id}" aria-label="Open ${esc(x.title)}"><div class="card-image">${x.images.length?`<img src="/media/${x.images[0]}" alt="${esc(x.title)}" loading="lazy">`:`<div class="placeholder">${kindIcon[x.type]||'◇'}<small>${talent?'ADD A HEADSHOT':'ADD A PHOTO'}</small></div>`}<span class="type-badge">${kindIcon[x.type]||'◇'} ${kindName[x.type]?.toUpperCase()||'REFERENCE'}</span>${x.images.length?`<span class="photo-count">▧ ${x.images.length}</span>`:''}</div><div class="card-info"><h3>${esc(x.title)}</h3><div class="card-meta">${esc(meta.filter(Boolean).join(' · ')||'Details to be added')}</div><div class="card-tags">${talent&&x.casting?.workedBefore==='yes'?'<span class="worked-before">Worked with us</span>':''}${chips.map(t=>`<span>${esc(t)}</span>`).join('')}${x.availability==='Unavailable'?'<span>Unavailable</span>':''}</div></div></button></article>`;
+  return `<article class="card ${talent?'talent-card':''}"><button class="card-open" data-open="${x.id}" aria-label="Open ${esc(x.title)}"><div class="card-image">${x.images.length?`<img src="/media/${galleryPhotos(x)[0]}" alt="${esc(x.title)}" loading="lazy">`:`<div class="placeholder">${kindIcon[x.type]||'◇'}<small>${talent?'ADD A HEADSHOT':'ADD A PHOTO'}</small></div>`}<span class="type-badge">${kindIcon[x.type]||'◇'} ${kindName[x.type]?.toUpperCase()||'REFERENCE'}</span>${x.images.length?`<span class="photo-count">▧ ${x.images.length}</span>`:''}</div><div class="card-info"><h3>${esc(x.title)}</h3><div class="card-meta">${esc(meta.filter(Boolean).join(' · ')||'Details to be added')}</div><div class="card-tags">${talent&&x.casting?.workedBefore==='yes'?'<span class="worked-before">Worked with us</span>':''}${chips.map(t=>`<span>${esc(t)}</span>`).join('')}${x.availability==='Unavailable'?'<span>Unavailable</span>':''}</div></div></button>${board?`<button type="button" class="deck-remove" data-remove-deck-item="${x.id}" aria-label="Remove ${esc(x.title)} from this Project Deck">×</button>`:''}</article>`;
  }).join(''):`<div class="empty"><span>${casting?'◎':'✳'}</span><h2>${casting?(scope.length?'No matching talent.':'Meet your next cast.'):(state.items.length?'Nothing here. Yet.':'Your collection starts here.')}</h2><p>${casting?'Build your team’s casting sheet with headshots, skills, languages, and people you’ve worked with.':state.items.length?'Try another search, clear your filters, or add a reference to this collection.':'Start with a location, a prop, or a talented person. Add photos and tags so your team can find them next time.'}</p><button class="primary" id="empty-add">${casting?'+ Add talent':'+ Add a reference'}</button></div>`;
 }
 function syncEditorType(){
@@ -81,22 +83,22 @@ function syncEditorType(){
  if(!form.elements.id.value)$('#editor-title').textContent=casting?'Add talent':'Add a reference';
 }
 function openEditor(item){
- $('#item-form').reset();$('#save-error').textContent='';const form=$('#item-form');form.elements.id.value=item?.id||'';
+ clearCoverPreviews();$('#item-form').reset();$('#save-error').textContent='';const form=$('#item-form');form.elements.id.value=item?.id||'';
  if(item){
   for(const [k,v] of Object.entries(item)){if(form.elements[k]&&k!=='images')form.elements[k].value=k==='tags'?v.join(', '):v}
   const c=item.casting||{};for(const [k,v] of Object.entries({cast_age:c.playingAge,cast_height:c.height,cast_languages:(c.languages||[]).join(', '),cast_skills:(c.skills||[]).join(', '),cast_history:c.workedBefore||'unknown',cast_reel:c.showreel}))form.elements[k].value=v||'';
  }else if(['location','prop','casting'].includes(state.view)){form.elements.type.value=state.view}
- syncEditorType();$('#editor-title').textContent=item?(item.type==='casting'?'Edit talent':'Edit reference'):(form.elements.type.value==='casting'?'Add talent':'Add a reference');$('#editor').showModal();
+ syncEditorType();renderCoverPicker();$('#editor-title').textContent=item?(item.type==='casting'?'Edit talent':'Edit reference'):(form.elements.type.value==='casting'?'Add talent':'Add a reference');$('#editor').showModal();
 }
 let activeDetail=null;
 const photoArrow=direction=>`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${direction==='previous'?'m14 6-6 6 6 6':'m10 6 6 6-6 6'}"/></svg>`;
 function photoViewer(item){
- const photos=item.images||[];
+ const photos=galleryPhotos(item);
  if(!photos.length)return '<div class="photo-empty">No photos added yet.</div>';
  return `<section class="photo-viewer" aria-label="${esc(item.title)} photos"><div class="photo-stage" id="photo-stage"><img id="detail-photo" src="/media/${photos[0]}" alt="${esc(item.title)} — photo 1 of ${photos.length}">${photos.length>1?`<button type="button" class="photo-arrow photo-previous" id="photo-previous" aria-label="Previous photo">${photoArrow('previous')}</button><button type="button" class="photo-arrow photo-next" id="photo-next" aria-label="Next photo">${photoArrow('next')}</button>`:''}</div><div class="photo-caption"><span id="photo-position" role="status" aria-live="polite">Photo 1 of ${photos.length}</span><a id="photo-open" href="/media/${photos[0]}" target="_blank" rel="noopener">Open image ↗</a></div>${photos.length>1?`<div class="photo-thumbnails" aria-label="Choose a photo">${photos.map((im,index)=>`<button type="button" class="photo-thumbnail" data-photo-index="${index}" aria-label="View photo ${index+1}" aria-current="${index===0?'true':'false'}"><img src="/media/${im}" alt="" loading="lazy"></button>`).join('')}</div>`:''}</section>`;
 }
 function setDetailPhoto(index){
- const item=activeDetail&&state.items.find(x=>x.id===activeDetail.id),photos=item?.images||[];
+ const item=activeDetail&&state.items.find(x=>x.id===activeDetail.id),photos=item?galleryPhotos(item):[];
  if(!photos.length||!$('#detail').open)return;
  activeDetail.index=(index+photos.length)%photos.length;
  const at=activeDetail.index;$('#detail-photo').src='/media/'+photos[at];$('#detail-photo').alt=item.title+' — photo '+(at+1)+' of '+photos.length;
@@ -108,13 +110,13 @@ function setDetailPhoto(index){
 function relatedRecords(item){
  if(!['location','prop'].includes(item.type))return '';
  const matches=ProductiondeckSimilarity.findSimilar(item,state.items),label=item.type==='location'?'Similar locations':'Similar props';
- return `<section class="related-section" aria-labelledby="related-title"><div class="related-heading"><h3 id="related-title">${label}</h3><span>Shared tags & category</span></div>${matches.length?`<div class="related-grid">${matches.map(({item:other,sharedTags,sameCategory})=>`<button class="related-card" type="button" data-related-id="${other.id}" aria-label="Open ${esc(other.title)}"><div class="related-image">${other.images?.length?`<img src="/media/${other.images[0]}" alt="" loading="lazy">`:`<span aria-hidden="true">${kindIcon[other.type]}</span>`}</div><div class="related-info"><strong>${esc(other.title)}</strong><small>${esc([other.category,other.city].filter(Boolean).join(' · '))}</small><div class="related-reasons">${sharedTags.slice(0,3).map(tag=>`<span>${esc(tag)}</span>`).join('')}${!sharedTags.length&&sameCategory?'<span>Same category</span>':''}</div></div></button>`).join('')}</div>`:'<p class="related-empty">No matching references yet. Shared tags and categories will bring similar finds here as your library grows.</p>'}</section>`;
+ return `<section class="related-section" aria-labelledby="related-title"><div class="related-heading"><h3 id="related-title">${label}</h3><span>Shared tags & category</span></div>${matches.length?`<div class="related-grid">${matches.map(({item:other,sharedTags,sameCategory})=>`<button class="related-card" type="button" data-related-id="${other.id}" aria-label="Open ${esc(other.title)}"><div class="related-image">${other.images?.length?`<img src="/media/${galleryPhotos(other)[0]}" alt="" loading="lazy">`:`<span aria-hidden="true">${kindIcon[other.type]}</span>`}</div><div class="related-info"><strong>${esc(other.title)}</strong><small>${esc([other.category,other.city].filter(Boolean).join(' · '))}</small><div class="related-reasons">${sharedTags.slice(0,3).map(tag=>`<span>${esc(tag)}</span>`).join('')}${!sharedTags.length&&sameCategory?'<span>Same category</span>':''}</div></div></button>`).join('')}</div>`:'<p class="related-empty">No matching references yet. Shared tags and categories will bring similar finds here as your library grows.</p>'}</section>`;
 }
 function openDetail(id){
  const x=state.items.find(i=>i.id===id);if(!x)return;activeDetail={id,index:0};const talent=x.type==='casting',c=x.casting||{};
  const pairs=talent?[['Talent type',x.category],['Based in',x.city],['Playing age',c.playingAge],['Height',c.height],['Languages',(c.languages||[]).join(', ')],['Skills',(c.skills||[]).join(', ')],['Worked with us',c.workedBefore==='yes'?'Yes':c.workedBefore==='no'?'No — new talent':'Not recorded'],['Availability',x.availability],['Contact / agent',x.contact],['Fee / day rate',x.cost]]:[['City / area',x.city],['Setting',x.setting],['Availability',x.availability],['Cost',x.cost],['Address / storage',x.address],['Contact',x.contact]];
  let showreel='';try{const u=new URL(c.showreel);if(u.protocol==='https:')showreel=u.href}catch{}
- $('#detail-content').innerHTML=`<div class="modal-head"><div><p class="eyebrow">${talent?'CASTING':x.type.toUpperCase()} / ${esc(x.category||'REFERENCE')}</p><h2 id="detail-title" tabindex="-1">${esc(x.title)}</h2></div><button class="icon close" aria-label="Close">×</button></div>${photoViewer(x)}${relatedRecords(x)}<div class="card-tags">${x.tags.map(t=>`<span>${esc(t)}</span>`).join('')}</div><dl class="detail-data">${pairs.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'—')}</dd></div>`).join('')}</dl>${showreel?`<a class="showreel-link secondary" href="${esc(showreel)}" target="_blank" rel="noopener noreferrer">Open showreel / portfolio ↗</a>`:''}${x.notes?`<h3>${talent?'Experience & casting notes':'Production notes'}</h3><p class="detail-notes">${esc(x.notes)}</p>`:''}<div class="detail-controls"><button class="secondary" id="edit-detail">${talent?'Edit talent':'Edit reference'}</button><select id="detail-board" aria-label="Choose shortlist"><option value="">Add to shortlist…</option>${state.boards.map(b=>`<option value="${b.id}">${esc(b.name)}${b.items.includes(id)?' ✓':''}</option>`).join('')}</select><button class="text-button" id="delete-detail">${talent?'Delete profile':'Delete reference'}</button></div><p id="detail-error" role="alert"></p>`;
+ $('#detail-content').innerHTML=`<div class="modal-head"><div><p class="eyebrow">${talent?'CASTING':x.type.toUpperCase()} / ${esc(x.category||'REFERENCE')}</p><h2 id="detail-title" tabindex="-1">${esc(x.title)}</h2></div><button class="icon close" aria-label="Close">×</button></div>${photoViewer(x)}${relatedRecords(x)}<div class="card-tags">${x.tags.map(t=>`<span>${esc(t)}</span>`).join('')}</div><dl class="detail-data">${pairs.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v||'—')}</dd></div>`).join('')}</dl>${showreel?`<a class="showreel-link secondary" href="${esc(showreel)}" target="_blank" rel="noopener noreferrer">Open showreel / portfolio ↗</a>`:''}${x.notes?`<h3>${talent?'Experience & casting notes':'Production notes'}</h3><p class="detail-notes">${esc(x.notes)}</p>`:''}<div class="detail-controls"><button class="secondary" id="edit-detail">${talent?'Edit talent':'Edit reference'}</button><select id="detail-board" aria-label="Choose Project Deck"><option value="">Add to Project Deck…</option>${state.boards.map(b=>`<option value="${b.id}">${esc(b.name)}${b.items.includes(id)?' ✓':''}</option>`).join('')}</select><button class="text-button" id="delete-detail">${talent?'Delete profile':'Delete reference'}</button></div><p id="detail-error" role="alert"></p>`;
  $('#edit-detail').onclick=()=>{$('#detail').close();openEditor(x)};
  $('#delete-detail').onclick=async()=>{if(!confirm(`Delete “${x.title}” and its photos?`))return;try{await api('items/'+id,{method:'DELETE'});$('#detail').close();await load()}catch(e){$('#detail-error').textContent=e.message}};
  $('#detail-board').onchange=async e=>{const b=state.boards.find(b=>b.id===e.target.value);if(!b)return;try{const already=b.items.includes(id);await post('boards/'+b.id,{items:already?b.items.filter(i=>i!==id):[...b.items,id]},'PUT');await load();$('#detail-error').textContent=already?'Removed from '+b.name:'Added to '+b.name;e.target.value=''}catch(err){$('#detail-error').textContent=err.message}};
@@ -133,13 +135,41 @@ async function team(){
  if(!$('#team-modal').open)$('#team-modal').showModal();
 }
 $('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#login-error').textContent='';try{await post('login',Object.fromEntries(new FormData(e.target)));e.target.reset();await boot({afterLogin:true})}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false}};
-$('#signout').onclick=async()=>{try{await post('logout',{});showLogin()}catch(e){error(e)}};
+$('#signout').onclick=async()=>{try{await post('logout',{});location.hash='home';showLogin()}catch(e){error(e)}};
 $('#add').onclick=()=>openEditor();$('#item-form').elements.type.onchange=syncEditorType;$('#search').oninput=render;$('#sort').onchange=render;for(const f of $$('.filters select'))f.onchange=render;
 $('#filter-toggle').onclick=()=>{$('#filters').hidden=!$('#filters').hidden;$('#filter-toggle').setAttribute('aria-expanded',String(!$('#filters').hidden))};
 $('#reset').onclick=()=>{$$('.filters select').forEach(s=>s.value='');state.tag='';$('#search').value='';render()};
-$('#add-board').onclick=()=>{$('#board-form').reset();$('#board-error').textContent='';$('#shortlist-modal').showModal()};
-$('#board-form').onsubmit=async e=>{e.preventDefault();try{const b=await post('boards',{name:new FormData(e.target).get('name')});state.view=b.id;$('#shortlist-modal').close();await load()}catch(err){$('#board-error').textContent=err.message}};
-$('#delete-board').onclick=async()=>{if(!confirm('Delete this shortlist? Your references will stay in the library.'))return;try{await api('boards/'+state.view,{method:'DELETE'});state.view='all';await load()}catch(e){error(e)}};
+let deckSelection=new Set();
+function renderDeckSelection(){
+ const query=$('#deck-search').value.trim().toLowerCase();
+ const items=state.items.filter(x=>[x.title,x.type,x.category,x.city,...x.tags].join(' ').toLowerCase().includes(query));
+ $('#deck-selection').innerHTML=items.map(item=>`<label class="deck-choice"><input type="checkbox" data-deck-choice="${item.id}" ${deckSelection.has(item.id)?'checked':''}>${item.images.length?`<img src="/media/${galleryPhotos(item)[0]}" alt="" loading="lazy">`:'<span class="deck-choice-placeholder">◇</span>'}<span><strong>${esc(item.title)}</strong><small>${esc(kindName[item.type])}${item.category?' · '+esc(item.category):''}</small></span></label>`).join('')||'<p class="muted">No matching references. Add references to your library to include them here.</p>';
+ $('#deck-selection-count').textContent=deckSelection.size+' selected · up to 500 references';
+}
+function editDeck(board){
+ $('#board-form').reset();$('#board-error').textContent='';$('#board-form').elements.id.value=board?.id||'';$('#board-form').elements.name.value=board?.name||'';
+ $('#board-modal-title').textContent=board?'Edit Project Deck':'New Project Deck';$('#board-save').textContent=board?'Save Project Deck ↗':'Create Project Deck ↗';
+ deckSelection=new Set((board?.items||[]).filter(id=>state.items.some(x=>x.id===id)));renderDeckSelection();$('#shortlist-modal').showModal();
+}
+$('#add-board').onclick=()=>editDeck();$('#edit-board').onclick=()=>editDeck(state.boards.find(x=>x.id===state.view));
+$('#deck-search').oninput=renderDeckSelection;
+$('#deck-selection').onchange=e=>{if(!e.target.dataset.deckChoice)return;const id=e.target.dataset.deckChoice;if(e.target.checked)deckSelection.add(id);else deckSelection.delete(id);$('#deck-selection-count').textContent=deckSelection.size+' selected · up to 500 references'};
+$('#board-form').onsubmit=async e=>{
+ e.preventDefault();const button=e.submitter;button.disabled=true;$('#board-error').textContent='';
+ try{if(deckSelection.size>500)throw Error('Choose up to 500 references for a Project Deck.');const id=e.target.elements.id.value,data={name:e.target.elements.name.value,items:[...deckSelection]};const result=await post(id?'boards/'+id:'boards',data,id?'PUT':'POST');state.view=id||result.id;$('#shortlist-modal').close();await load()}catch(err){$('#board-error').textContent=err.message}finally{button.disabled=false}
+};
+$('#delete-board').onclick=async()=>{if(!confirm('Delete this Project Deck? Its locations, props and casting profiles will stay in the library.'))return;try{await api('boards/'+state.view,{method:'DELETE'});state.view='all';await load()}catch(e){error(e)}};
+let coverURLs=[];
+function clearCoverPreviews(){for(const url of coverURLs)URL.revokeObjectURL(url);coverURLs=[]}
+function renderCoverPicker(){
+ const form=$('#item-form'),previous=form.elements.cover_choice?.value||'',item=state.items.find(x=>x.id===form.elements.id.value);clearCoverPreviews();
+ const choices=(item?.images||[]).map((id,i)=>({value:'saved:'+id,url:'/media/'+id,label:'Saved photo '+(i+1)}));
+ for(const [i,file] of [...form.elements.photos.files].entries()){const url=URL.createObjectURL(file);coverURLs.push(url);choices.push({value:'new:'+i,url,label:'New photo '+(i+1)})}
+ const preferred=choices.some(c=>c.value===previous)?previous:item?.coverImage?'saved:'+item.coverImage:choices[0]?.value;
+ $('#cover-picker').hidden=!choices.length;
+ $('#cover-grid').innerHTML=choices.map((c,i)=>`<label class="cover-choice"><input type="radio" name="cover_choice" value="${c.value}" ${(c.value===preferred||!choices.some(x=>x.value===preferred)&&i===0)?'checked':''}><img src="${c.url}" alt="${esc(c.label)}"><span>${esc(c.label)}</span><small>Use as thumbnail</small></label>`).join('');
+}
+$('#item-form').elements.photos.onchange=renderCoverPicker;$('#editor').addEventListener('close',clearCoverPreviews);
 async function preparePhoto(file){
  const bitmap=await createImageBitmap(file);
  try{
@@ -149,7 +179,26 @@ async function preparePhoto(file){
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));if(!blob)throw Error('Could not prepare this photo');return blob;
  }finally{bitmap.close()}
 }
-$('#item-form').onsubmit=async e=>{e.preventDefault();const form=e.target,fd=new FormData(form),files=[...form.elements.photos.files],existing=state.items.find(x=>x.id===fd.get('id'));$('#save-error').textContent='';if(files.length+(existing?.images.length||0)>maxPhotosFor(fd.get('type'))){$('#save-error').textContent='Use up to '+maxPhotosFor(fd.get('type'))+' photos for this reference.';return}if(files.some(f=>f.size>8*1024*1024)){ $('#save-error').textContent='Each photo must be 8 MB or smaller.';return}$('#save').disabled=true;let savedId='';try{const data=Object.fromEntries(fd);delete data.photos;data.tags=castList(data.tags);if(data.type==='casting')data.casting={playingAge:data.cast_age,height:data.cast_height,languages:castList(data.cast_languages),skills:castList(data.cast_skills),workedBefore:data.cast_history,showreel:data.cast_reel};for(const key of Object.keys(data))if(key.startsWith('cast_'))delete data[key];const id=existing?.id||(await post('items',data)).id;savedId=id;form.elements.id.value=id;if(existing)await post('items/'+id,data,'PUT');for(let i=0;i<files.length;i++){$('#save').textContent=`Uploading photo ${i+1} of ${files.length}…`;await api('items/'+id+'/images',{method:'POST',body:await preparePhoto(files[i])})}if(!existing&&state.boards.some(b=>b.id===state.view)){const b=state.boards.find(b=>b.id===state.view);await post('boards/'+b.id,{items:[...b.items,id]},'PUT')}$('#editor').close();await load()}catch(err){if(savedId){form.elements.photos.value='';try{await load()}catch{}$('#save-error').textContent='Reference saved, but a later step failed: '+err.message+' Re-select any missing photos to retry.'}else $('#save-error').textContent=err.message}finally{$('#save').disabled=false;$('#save').textContent='Save reference ↗'}};
+$('#item-form').onsubmit=async e=>{
+ e.preventDefault();const form=e.target,fd=new FormData(form),files=[...form.elements.photos.files],existing=state.items.find(x=>x.id===fd.get('id')),coverChoice=fd.get('cover_choice')||'';$('#save-error').textContent='';
+ if(files.length+(existing?.images.length||0)>maxPhotosFor(fd.get('type'))){$('#save-error').textContent='Use up to '+maxPhotosFor(fd.get('type'))+' photos for this reference.';return}
+ if(files.some(f=>f.size>8*1024*1024)){ $('#save-error').textContent='Each photo must be 8 MB or smaller.';return}
+ $('#save').disabled=true;let savedId='';
+ try{
+  const data=Object.fromEntries(fd);delete data.photos;delete data.cover_choice;data.tags=castList(data.tags);
+  if(coverChoice.startsWith('saved:'))data.coverImage=coverChoice.slice(6);
+  if(data.type==='casting')data.casting={playingAge:data.cast_age,height:data.cast_height,languages:castList(data.cast_languages),skills:castList(data.cast_skills),workedBefore:data.cast_history,showreel:data.cast_reel};
+  for(const key of Object.keys(data))if(key.startsWith('cast_'))delete data[key];
+  const id=existing?.id||(await post('items',data)).id;savedId=id;form.elements.id.value=id;
+  if(existing)await post('items/'+id,data,'PUT');
+  let newCover='';
+  for(let i=0;i<files.length;i++){$('#save').textContent=`Uploading photo ${i+1} of ${files.length}…`;const photo=await api('items/'+id+'/images',{method:'POST',body:await preparePhoto(files[i])});if(coverChoice==='new:'+i)newCover=photo.id}
+  if(newCover)await post('items/'+id,{...data,coverImage:newCover},'PUT');
+  if(!existing&&state.boards.some(b=>b.id===state.view)){const b=state.boards.find(b=>b.id===state.view);await post('boards/'+b.id,{items:[...b.items,id]},'PUT')}
+  $('#editor').close();await load();
+ }catch(err){if(savedId){form.elements.photos.value='';try{await load()}catch{}renderCoverPicker();$('#save-error').textContent='Reference saved, but a later step failed: '+err.message+' Re-select any missing photos to retry.'}else $('#save-error').textContent=err.message}
+ finally{$('#save').disabled=false;$('#save').textContent='Save reference ↗'}
+};
 $('#team').onclick=()=>team().catch(error);
 $('#team-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('users',Object.fromEntries(new FormData(e.target)));e.target.reset();$('#team-error').textContent='';await team()}catch(err){$('#team-error').textContent=err.message}finally{e.submitter.disabled=false}};
 document.addEventListener('click',async e=>{const close=e.target.closest('.close');if(close)close.closest('dialog').close();const view=e.target.closest('[data-view]');if(view){state.view=view.dataset.view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='');render()}const tag=e.target.closest('[data-tag]');if(tag){state.tag=state.tag===tag.dataset.tag?'':tag.dataset.tag;render()}const card=e.target.closest('[data-open]');if(card)openDetail(card.dataset.open);if(e.target.id==='empty-add')openEditor();const member=e.target.closest('[data-remove-user]');if(member&&confirm('Remove this teammate’s access and sign them out?'))try{await api('users/'+member.dataset.removeUser,{method:'DELETE'});await team()}catch(err){$('#team-error').textContent=err.message}});
@@ -158,7 +207,7 @@ $('#password-button').onclick=()=>{$('#password-form').reset();$('#password-erro
 $('#password-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('password',Object.fromEntries(new FormData(e.target)));$('#password-modal').close();showLogin();$('#login-error').textContent='Password updated. Please sign in with your new password.'}catch(err){$('#password-error').textContent=err.message}finally{e.submitter.disabled=false}};
 async function boot({afterLogin=false}={}){
  try{
-  state.user=await api('me');$('#user-name').textContent=state.user.name;$('#initial').textContent=state.user.name[0].toUpperCase();$('#team').hidden=!state.user.admin;$('#login').hidden=true;$('#app').hidden=false;await load();
+  state.user=await api('me');$('#user-name').textContent=state.user.name;$('#initial').textContent=state.user.name[0].toUpperCase();$('#team').hidden=!state.user.admin;await load();routeWorkspace();
  }catch(e){
   if(!$('#app').hidden){error(e);return}
   showLogin();
@@ -166,6 +215,16 @@ async function boot({afterLogin=false}={}){
   else if(afterLogin||e.status!==401)$('#login-error').textContent=e.message;
  }
 }
+function routeWorkspace(){
+ const home=homeReady&&(!location.hash||location.hash==='#home');$('#home').hidden=!home;
+ if(home){$('#login').hidden=true;$('#app').hidden=true;$$('dialog[open]').forEach(d=>d.close());return}
+ if(!state.user){showLogin();return}
+ $('#login').hidden=true;$('#app').hidden=false;
+ const view={'#locations':'location','#props':'prop','#casting':'casting'}[location.hash];if(view){state.view=view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='')}
+ render();
+}
+window.addEventListener('hashchange',routeWorkspace);
+document.addEventListener('click',async e=>{const remove=e.target.closest('[data-remove-deck-item]');if(!remove)return;const board=state.boards.find(x=>x.id===state.view);if(!board)return;remove.disabled=true;try{await post('boards/'+board.id,{items:board.items.filter(id=>id!==remove.dataset.removeDeckItem)},'PUT');await load()}catch(err){remove.disabled=false;error(err)}});
 boot();
 
 setInterval(()=>{if(!$('#app').hidden&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);

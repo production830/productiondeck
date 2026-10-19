@@ -243,3 +243,28 @@ test('a database still using the old photo cap produces an actionable migration 
  const r=await handle(new Request('https://library.example/api/items/'+item.id+'/images',{method:'POST',headers:{Origin:'https://library.example',Cookie:'__Host-pd_access=admin-token'},body:Uint8Array.from([255,216,255,0])}),f.env);
  assert.equal(r.status,503);const b=await r.json();assert.equal(b.code,'photo_limit_migration_required');assert.match(b.error,/002_twenty_photos/);assert.equal(f.objects.size,0);
 });
+
+test('thumbnail choices belong to the reference and survive unrelated metadata edits',async()=>{
+ const f=fixture(),data={title:'Location',type:'location',tags:['test']};
+ const first=await (await f.req('/api/items',{method:'POST',body:data})).json(),second=await (await f.req('/api/items',{method:'POST',body:{...data,title:'Other'}})).json();
+ const bytes=new Uint8Array([255,216,255,0,0]);
+ const photo=await (await f.req('/api/items/'+first.id+'/images',{method:'POST',body:bytes})).json();
+ const other=await (await f.req('/api/items/'+second.id+'/images',{method:'POST',body:bytes})).json();
+ assert.equal((await f.req('/api/items/'+first.id,{method:'PUT',body:{...data,coverImage:other.id}})).status,400);
+ assert.equal((await f.req('/api/items/'+first.id,{method:'PUT',body:{...data,coverImage:'not-a-photo'}})).status,400);
+ assert.equal((await f.req('/api/items/'+first.id,{method:'PUT',body:{...data,coverImage:photo.id}})).status,200);
+ assert.equal((await f.req('/api/items/'+first.id,{method:'PUT',body:{...data,title:'Renamed'}})).status,200);
+ const records=await (await f.req('/api/items')).json();assert.equal(records.find(x=>x.id===first.id).coverImage,photo.id);
+ assert.equal((await f.req('/api/items',{method:'POST',body:{...data,coverImage:photo.id}})).status,400);
+ assert.equal((await f.req('/api/items/'+first.id,{method:'PUT',body:{...data,coverImage:''}})).status,200);
+});
+test('Project Decks can be named and edited independently without deleting reference records',async()=>{
+ const f=fixture(),location=await (await f.req('/api/items',{method:'POST',body:{title:'House',type:'location'}})).json(),talent=await (await f.req('/api/items',{method:'POST',body:{title:'Actor',type:'casting'}})).json();
+ const deck=await (await f.req('/api/boards',{method:'POST',body:{name:'Campaign',items:[location.id,talent.id,location.id]}})).json();
+ assert.deepEqual(f.tables.boards[0].items,[location.id,talent.id]);
+ assert.equal((await f.req('/api/boards/'+deck.id,{method:'PUT',body:{name:'New campaign'}})).status,200);assert.deepEqual(f.tables.boards[0].items,[location.id,talent.id]);
+ assert.equal((await f.req('/api/boards/'+deck.id,{method:'PUT',body:{items:[talent.id]}})).status,200);assert.equal(f.tables.boards[0].name,'New campaign');
+ assert.equal((await f.req('/api/boards/'+deck.id,{method:'PUT',body:{name:'Wrong',items:['bad-id']}})).status,400);assert.equal(f.tables.boards[0].name,'New campaign');
+ assert.equal((await f.req('/api/boards/'+deck.id,{method:'PUT',body:{name:' '}})).status,400);
+ assert.equal((await f.req('/api/boards/'+deck.id,{method:'DELETE'})).status,200);assert.equal(f.tables.items.length,2);
+});
