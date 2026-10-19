@@ -1,66 +1,86 @@
-# Productiondeck
+# Tatamata Productiondeck
 
-A private visual library for a commercial production team. Upload the locations and props you already have, then find them by photo, tags, category, city, setting, availability, or text search. Save selections into shared shortlists for each client or shoot.
+A private visual library of your company's locations and props, with Tatamata branding, photos, tags, combined filters, and shared shortlists for commercial shoots.
 
-## What works
+## Free hosting setup
 
-- Individual email/password accounts; no public registration.
-- Administrator creates and removes teammates. Removal immediately revokes their sessions.
-- Each member can change their password; doing so signs out their other sessions.
-- Shared location and prop records, with up to 12 photos per record.
-- Protected JPEG, PNG, and WebP photo uploads, up to 8 MB per photo.
-- Tags, search, combined filters, sorting, and reusable project shortlists.
-- Address/storage position, contact, cost, availability, and production notes.
-- Responsive dark visual library with no external scripts, fonts, or image dependencies.
-- Persistent SQLite database and local photo files, kept outside Git.
+This version is designed for **Cloudflare Workers Free + Supabase Free**. It does not require a Render server, a paid disk, Vercel Pro, an R2 subscription, or a purchased domain. Use the supplied `workers.dev` address.
 
-The library starts empty. Everyone with an account can view, add, edit, and delete shared references and shortlists. Only the administrator can manage membership. Creating an account does not send an email; give that teammate their temporary password through your usual private channel. They can change it from the settings icon beside their name.
+Free means within provider quotas, not unlimited storage. At the time this setup was prepared, Supabase Free includes 1 GB file storage and a 500 MB database. It may pause inactive projects after a week. Cloudflare Workers Free includes 100,000 dynamic requests per day; static asset requests are free. Usage beyond free limits can interrupt service. Stay on Free plans and do not enable paid upgrades to follow this setup.
 
-## Run locally
+Official limits: [Supabase pricing](https://supabase.com/pricing), [Cloudflare Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
 
-Install Node.js 24 or later. There are no npm dependencies and no frontend build step.
+Photos are converted in your browser to JPEG, maximum 1600 pixels along the longest side, before upload. This saves storage and bandwidth. These are browsing copies, not an archive of your full-resolution originals. Keep originals in your existing company storage.
 
-1. Copy `.env.example` to `.env`.
-2. Set your administrator email and a unique password of at least 12 characters.
-3. Set `COOKIE_SECURE=false` **only for localhost HTTP development**.
-4. Run `npm start`.
-5. Open `http://localhost:3000` and sign in.
+## 1. Create a Supabase Free project
 
-The first startup creates the administrator. Later changes to `ADMIN_EMAIL` or `ADMIN_PASSWORD` do not overwrite the existing account. Use the app to change your password.
+1. Sign up at [Supabase](https://supabase.com/dashboard) using your company account. Choose a **Free** organization and create a **dedicated new project** named `productiondeck`.
+2. Save your database password privately. It is not a website login and is not an app setting.
+3. Open **SQL Editor**, create a query, paste all of [`supabase/migrations/001_productiondeck.sql`](supabase/migrations/001_productiondeck.sql), and run it. The query creates four `pd_` tables and a **private** `productiondeck-photos` bucket. Keep that bucket private and do not add public storage policies.
+4. In **Authentication → Sign In / Providers**, disable **Allow new users to sign up**. Password/email sign-in must remain enabled. The admin API can create coworkers while public signup is disabled.
+5. Open **Authentication → Users → Add user → Create new user**. Enter your company administrator email and a unique password of at least 12 characters. Enable **Auto Confirm User** when available. This creates your first website account without requiring an invitation email.
+6. In SQL Editor, run the following after replacing `YOUR_ADMIN_EMAIL` privately with the email you just used:
 
-## Publish privately
+```sql
+insert into public.pd_members (id, email, name, admin)
+select id, email, 'Administrator', true
+from auth.users
+where lower(email) = lower('YOUR_ADMIN_EMAIL')
+on conflict (id) do update set admin = true;
 
-This app needs a Node server and a persistent disk. GitHub Pages and ordinary ephemeral serverless functions cannot run this version correctly.
+select id, email, name, admin from public.pd_members;
+```
 
-A `render.yaml` blueprint is included for a single Docker service with a persistent disk. Once the files are in your GitHub repository:
+Confirm your administrator appears in the result. A Supabase Auth account alone does not grant library access; membership is checked on every protected request.
 
-1. In Render, create a new **Blueprint** from this repository.
-2. Enter `ADMIN_EMAIL` and `ADMIN_PASSWORD` securely when requested. Do not commit a filled `.env` file.
-3. Review the service and persistent disk pricing before creating it.
-4. Deploy and open the generated **HTTPS** address.
-5. Sign in, upload a reference, reload, and verify it persists.
-6. Open **Manage team** to create your coworkers' accounts.
+7. Find your **Project URL**, **anon** API key, and **service_role** API key in project settings. These JWT keys may be under **Legacy API Keys**. Do not use the database password as an API key. Keep the service_role key private: it belongs only in Cloudflare's encrypted secrets. Do not put it in GitHub, browser JavaScript, screenshots, or chat.
 
-For another Docker host, mount a persistent directory at `/data`, set `DATA_DIR=/data`, supply the administrator variables, and put the service behind HTTPS. Keep `COOKIE_SECURE=true` in production. Run one app instance against the SQLite disk. The default port is 3000; the host can override `PORT`.
+## 2. Deploy on Cloudflare Workers Free
 
-The login page and frontend assets are publicly reachable; all library records, member details, shortlists, and photo routes require an authenticated session. Photos are not stored under the public folder. The website has `noindex,nofollow`, but sign-in is what protects the library. A public source repository does not make uploaded records public: runtime data and credentials must stay outside it.
+1. Sign up or sign in at [Cloudflare](https://dash.cloudflare.com/) using your company account. Stay on the **Workers Free** plan.
+2. Open **Workers & Pages → Create application → Import a repository** (or **Connect GitHub** under Workers).
+3. Authorize the GitHub account that owns this repository, then select `production830/productiondeck` and branch `main`.
+4. Use the **Worker** flow, not a static-only Pages deployment. The Worker name must match `productiondeck` in `wrangler.jsonc`.
+5. Build command: `npm test`. Deploy command: `npx wrangler@4 deploy`. Root directory: repository root. No npm dependencies or frontend build are required.
+6. Deploy. The first deployment can show the login screen, but signing in will say the library is not configured until you add the following **runtime** settings under **Worker → Settings → Variables and Secrets**:
 
-## Data and backups
+| Name | Type | Value |
+| --- | --- | --- |
+| `SUPABASE_URL` | Text or secret | Your Supabase Project URL |
+| `SUPABASE_ANON_KEY` | Secret | Your Supabase legacy anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret | Your Supabase legacy service_role key |
 
-`DATA_DIR` contains `productiondeck.sqlite`, SQLite journal files, and `images/`. Keep all of it on durable storage. Back up the whole directory while the service is stopped, or use a SQLite-aware backup workflow plus a matching image backup. Restore into an empty data directory, preserve filesystem ownership, and restart. Test restores before relying on backups.
+Add them as Worker runtime bindings, not merely Git build variables. Save/deploy the updated settings. The supplied Wrangler file intentionally contains no secrets. If you create a separate preview or staging Worker, leave production keys off it or use a separate Supabase test project.
 
-Deleting a reference removes its photos permanently. Deleting a shortlist keeps its references. Shortlists ignore references that have subsequently been deleted.
+7. Open the generated HTTPS `workers.dev` URL and sign in with your administrator account. No custom domain purchase is needed.
+8. Create a reference with a photo, add tags and a shortlist, then reload and confirm it remains. Sign out and confirm both records and a copied `/media/...` image URL are inaccessible. Test a second teammate's account.
 
-## Checks
+If a project-creation screen asks you to upgrade, subscribe, or enter payment details, stop and check that you selected the Free plan and did not add a paid service. This setup does not intentionally provision billable resources.
 
-Run `npm test`. The integration test uses a disposable database and verifies sign-in, private image access, input validation, uploads, shared CRUD, shortlists, administrator boundaries, password changes, account revocation, cross-origin write rejection, and logout. It requires permission to listen on a local loopback port.
+## 3. Add teammates
 
-JavaScript syntax checks: `node --check server.js` and `node --check public/app.js`.
+Open **Manage team** from your administrator account. Create a name, email, and temporary password for each person. Share their password privately; no email is sent. They can change it using the settings icon beside their name.
 
-Browser visual QA and a live hosting deployment have not been completed in the authoring environment. Before entering real production data, complete the HTTPS upload/reload/sign-out checks on your chosen host.
+All members can view, create, edit, and delete the shared references and shortlists. Only admins can manage membership. Removing a member blocks their library requests immediately, including photo requests, even if their login token has not expired. Password changes clear the current browser session and revoke refresh tokens; existing access tokens on other devices may last until Supabase's configured JWT expiry. Account removal is the immediate way to revoke library access.
 
-## Scope of this first version
+There is no public registration or in-app password-reset email flow. If an administrator loses their password, the Supabase project owner can use Auth administration to reset that user's password. Do not delete project data to reset an account.
 
-Tags are added manually; there is no AI tagging. There is no public signup, email delivery, forgotten-password flow, external SSO, booking calendar, per-project permission model, or automatic cloud photo backup. For a larger library, a future iteration can move uploads to object storage, generate thumbnails, and add pagination. This version loads the record catalog in the browser and serves original uploaded images; resize large photos before upload for faster browsing.
+## Privacy and storage
 
-If an administrator loses access, the host operator can reset the account using a deliberate database maintenance operation after taking a backup. Do not delete the database to reset a password, because it contains your library records.
+The login screen, branding SVGs, and frontend assets are public. Records, shortlists, membership data, and photo downloads require an authenticated member. Session tokens use Secure, HttpOnly, SameSite cookies; they are not stored in browser localStorage. Database tables have row-level security enabled and browser roles have no table privileges. The Worker alone holds the service-role key. Authentication and database requests use HTTPS.
+
+Supabase's free allowance is shared by your project/organization according to its current terms. Watch storage and bandwidth usage in its dashboard. Keep your own backups of important photos and records: the Free plan is not an automatic backup service. Free projects may need restoring from the Supabase dashboard after inactivity. No automated activity is generated to prevent provider pausing.
+
+Deleting a reference permanently deletes its browsing photos. Deleting a shortlist keeps the references. The record catalog is loaded into the browser; very large libraries will need further pagination and search work. This version does not automatically migrate any SQLite data from the earlier unhosted Render version.
+
+## Local development and verification
+
+Requires Node.js 22 or later. `npm test` runs the Worker handler tests directly against a simulated Supabase HTTP service, with no real credentials or live database. `npm run check` checks JavaScript syntax. These checks cover access control, private photos, refresh behavior, shared CRUD, shortlists, upload cleanup, membership revocation, and catalog pagination. They do not prove live Supabase configuration, Cloudflare deployment, browser layout, or provider quotas.
+
+For local Worker development, copy `.dev.vars.example` to `.dev.vars`, fill it using a dedicated Supabase **test** project, and run `npm run dev`. Wrangler is fetched through `npx`. Production cookies use Secure and the `__Host-` prefix; use a local HTTPS preview for browser sign-in. Do not commit `.dev.vars`.
+
+The four logo SVGs under `public/brand/` are the company's supplied artwork, retained unchanged. The horizontal variant is used in navigation, the original in sign-in, the icon in workspace chrome and the favicon, and the wordmark in the footer. CSS displays the black artwork in a light tone on the dark interface.
+
+## Hosting migration status
+
+The paid Render blueprint and disk-based server were removed from this version. The source is prepared for the free setup above. A live deployment and browser QA still require the owner's Cloudflare and Supabase accounts and settings; no live site is claimed until those steps succeed.

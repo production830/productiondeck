@@ -1,7 +1,15 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const state={items:[],boards:[],view:'all',tag:'',user:null};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,options={}){const r=await fetch('/api/'+path,{...options,headers:{...(options.body&&typeof options.body==='string'?{'Content-Type':'application/json'}:{}),...options.headers}});let b;try{b=await r.json()}catch{throw Error('Could not connect. Please try again.')}if(!r.ok){if(r.status===401&&path!=='login'){showLogin();$$('dialog[open]').forEach(d=>d.close())}throw Error(b.error||'Request failed')}return b}
+async function api(path,options={}){
+ const perform=()=>fetch('/api/'+path,{...options,headers:{...(options.body&&typeof options.body==='string'?{'Content-Type':'application/json'}:{}),...options.headers}});
+ let r=await perform();
+ if(r.status===401&&!['login','me','logout'].includes(path)){
+  const refresh=await fetch('/api/me');if(refresh.ok)r=await perform();
+ }
+ let b;try{b=await r.json()}catch{throw Error('Could not connect. Please try again.')}
+ if(!r.ok){if(r.status===401&&path!=='login'){showLogin();$$('dialog[open]').forEach(d=>d.close())}throw Error(b.error||'Request failed')}return b
+}
 const post=(path,b,method='POST')=>api(path,{method,body:JSON.stringify(b)});
 function showLogin(){$('#login').hidden=false;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
 function error(e){$('#notice').textContent=e.message}
@@ -38,12 +46,23 @@ $('#reset').onclick=()=>{$$('.filters select').forEach(s=>s.value='');state.tag=
 $('#add-board').onclick=()=>{$('#board-form').reset();$('#board-error').textContent='';$('#shortlist-modal').showModal()};
 $('#board-form').onsubmit=async e=>{e.preventDefault();try{const b=await post('boards',{name:new FormData(e.target).get('name')});state.view=b.id;$('#shortlist-modal').close();await load()}catch(err){$('#board-error').textContent=err.message}};
 $('#delete-board').onclick=async()=>{if(!confirm('Delete this shortlist? Your references will stay in the library.'))return;try{await api('boards/'+state.view,{method:'DELETE'});state.view='all';await load()}catch(e){error(e)}};
-$('#item-form').onsubmit=async e=>{e.preventDefault();const form=e.target,fd=new FormData(form),files=[...form.elements.photos.files],existing=state.items.find(x=>x.id===fd.get('id'));$('#save-error').textContent='';if(files.length+(existing?.images.length||0)>12){$('#save-error').textContent='Use up to 12 photos per reference.';return}if(files.some(f=>f.size>8*1024*1024)){ $('#save-error').textContent='Each photo must be 8 MB or smaller.';return}$('#save').disabled=true;let savedId='';try{const data=Object.fromEntries(fd);delete data.photos;data.tags=data.tags.split(',').map(s=>s.trim()).filter(Boolean);const id=existing?.id||(await post('items',data)).id;savedId=id;form.elements.id.value=id;if(existing)await post('items/'+id,data,'PUT');for(let i=0;i<files.length;i++){$('#save').textContent=`Uploading photo ${i+1} of ${files.length}…`;await api('items/'+id+'/images',{method:'POST',body:files[i]})}if(!existing&&state.boards.some(b=>b.id===state.view)){const b=state.boards.find(b=>b.id===state.view);await post('boards/'+b.id,{items:[...b.items,id]},'PUT')}$('#editor').close();await load()}catch(err){if(savedId){form.elements.photos.value='';try{await load()}catch{}$('#save-error').textContent='Reference saved, but a later step failed: '+err.message+' Re-select any missing photos to retry.'}else $('#save-error').textContent=err.message}finally{$('#save').disabled=false;$('#save').textContent='Save reference ↗'}};
+async function preparePhoto(file){
+ const bitmap=await createImageBitmap(file);
+ try{
+  const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Your browser could not prepare this photo');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));if(!blob)throw Error('Could not prepare this photo');return blob;
+ }finally{bitmap.close()}
+}
+$('#item-form').onsubmit=async e=>{e.preventDefault();const form=e.target,fd=new FormData(form),files=[...form.elements.photos.files],existing=state.items.find(x=>x.id===fd.get('id'));$('#save-error').textContent='';if(files.length+(existing?.images.length||0)>12){$('#save-error').textContent='Use up to 12 photos per reference.';return}if(files.some(f=>f.size>8*1024*1024)){ $('#save-error').textContent='Each photo must be 8 MB or smaller.';return}$('#save').disabled=true;let savedId='';try{const data=Object.fromEntries(fd);delete data.photos;data.tags=data.tags.split(',').map(s=>s.trim()).filter(Boolean);const id=existing?.id||(await post('items',data)).id;savedId=id;form.elements.id.value=id;if(existing)await post('items/'+id,data,'PUT');for(let i=0;i<files.length;i++){$('#save').textContent=`Uploading photo ${i+1} of ${files.length}…`;await api('items/'+id+'/images',{method:'POST',body:await preparePhoto(files[i])})}if(!existing&&state.boards.some(b=>b.id===state.view)){const b=state.boards.find(b=>b.id===state.view);await post('boards/'+b.id,{items:[...b.items,id]},'PUT')}$('#editor').close();await load()}catch(err){if(savedId){form.elements.photos.value='';try{await load()}catch{}$('#save-error').textContent='Reference saved, but a later step failed: '+err.message+' Re-select any missing photos to retry.'}else $('#save-error').textContent=err.message}finally{$('#save').disabled=false;$('#save').textContent='Save reference ↗'}};
 $('#team').onclick=()=>team().catch(error);
 $('#team-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('users',Object.fromEntries(new FormData(e.target)));e.target.reset();$('#team-error').textContent='';await team()}catch(err){$('#team-error').textContent=err.message}finally{e.submitter.disabled=false}};
 document.addEventListener('click',async e=>{const close=e.target.closest('.close');if(close)close.closest('dialog').close();const view=e.target.closest('[data-view]');if(view){state.view=view.dataset.view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='');render()}const tag=e.target.closest('[data-tag]');if(tag){state.tag=state.tag===tag.dataset.tag?'':tag.dataset.tag;render()}const card=e.target.closest('[data-open]');if(card)openDetail(card.dataset.open);if(e.target.id==='empty-add')openEditor();const member=e.target.closest('[data-remove-user]');if(member&&confirm('Remove this teammate’s access and sign them out?'))try{await api('users/'+member.dataset.removeUser,{method:'DELETE'});await team()}catch(err){$('#team-error').textContent=err.message}});
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!$('dialog[open]')&&!$('#app').hidden){e.preventDefault();$('#search').focus()}});
 $('#password-button').onclick=()=>{$('#password-form').reset();$('#password-error').textContent='';$('#password-modal').showModal()};
-$('#password-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('password',Object.fromEntries(new FormData(e.target)));$('#password-modal').close();$('#notice').textContent='Password updated. Other sessions have been signed out.'}catch(err){$('#password-error').textContent=err.message}finally{e.submitter.disabled=false}};
+$('#password-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('password',Object.fromEntries(new FormData(e.target)));$('#password-modal').close();showLogin();$('#login-error').textContent='Password updated. Please sign in with your new password.'}catch(err){$('#password-error').textContent=err.message}finally{e.submitter.disabled=false}};
 async function boot(){try{state.user=await api('me');$('#user-name').textContent=state.user.name;$('#initial').textContent=state.user.name[0].toUpperCase();$('#team').hidden=!state.user.admin;$('#login').hidden=true;$('#app').hidden=false;await load()}catch(e){if(!$('#app').hidden)error(e);else showLogin()}}
 boot();
+
+setInterval(()=>{if(!$('#app').hidden&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);

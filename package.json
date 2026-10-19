@@ -1,1 +1,1 @@
-{"name":"productiondeck","version":"1.0.0","private":true,"type":"module","engines":{"node":">=24"},"scripts":{"start":"node --env-file-if-exists=.env server.js","test":"node --test"}}
+{"name":"productiondeck","version":"2.0.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"test":"node test/worker.test.js","check":"node --check worker.js && node --check public/app.js","dev":"npx wrangler@4 dev","deploy":"npx wrangler@4 deploy"}}
