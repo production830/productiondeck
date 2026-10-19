@@ -1,14 +1,23 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const state={items:[],boards:[],view:'all',tag:'',user:null};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let sessionRefresh=null;
+async function refreshSession(){
+ if(!sessionRefresh)sessionRefresh=fetch('/api/me').finally(()=>{sessionRefresh=null});
+ return (await sessionRefresh).clone();
+}
 async function api(path,options={}){
- const perform=()=>fetch('/api/'+path,{...options,headers:{...(options.body&&typeof options.body==='string'?{'Content-Type':'application/json'}:{}),...options.headers}});
+ const perform=()=>path==='me'?refreshSession():fetch('/api/'+path,{...options,headers:{...(options.body&&typeof options.body==='string'?{'Content-Type':'application/json'}:{}),...options.headers}});
  let r=await perform();
  if(r.status===401&&!['login','me','logout'].includes(path)){
-  const refresh=await fetch('/api/me');if(refresh.ok)r=await perform();
+  const refreshed=await refreshSession();r=refreshed.ok?await perform():refreshed;
  }
  let b;try{b=await r.json()}catch{throw Error('Could not connect. Please try again.')}
- if(!r.ok){if(r.status===401&&path!=='login'){showLogin();$$('dialog[open]').forEach(d=>d.close())}throw Error(b.error||'Request failed')}return b
+ if(!r.ok){
+  if(r.status===401&&path!=='login'){showLogin();$$('dialog[open]').forEach(d=>d.close())}
+  throw Object.assign(Error(b.error||'Request failed'),{status:r.status,code:b.code});
+ }
+ return b;
 }
 const post=(path,b,method='POST')=>api(path,{method,body:JSON.stringify(b)});
 function showLogin(){$('#login').hidden=false;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
@@ -87,8 +96,11 @@ function openDetail(id){
  $('#detail-board').onchange=async e=>{const b=state.boards.find(b=>b.id===e.target.value);if(!b)return;try{const already=b.items.includes(id);await post('boards/'+b.id,{items:already?b.items.filter(i=>i!==id):[...b.items,id]},'PUT');await load();$('#detail-error').textContent=already?'Removed from '+b.name:'Added to '+b.name;e.target.value=''}catch(err){$('#detail-error').textContent=err.message}};
  if(!$('#detail').open)$('#detail').showModal();
 }
-async function team(){const users=await api('users');$('#members').innerHTML=users.map(u=>`<div class="member"><div>${esc(u.name)}${u.admin?' · Admin':''}<small>${esc(u.email)}</small></div>${u.id!==state.user.id?`<button class="text-button" data-remove-user="${u.id}">Remove access</button>`:''}</div>`).join('');if(!$('#team-modal').open)$('#team-modal').showModal()}
-$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#login-error').textContent='';try{await post('login',Object.fromEntries(new FormData(e.target)));e.target.reset();await boot()}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false}};
+async function team(){
+ const users=await api('users');$('#members').innerHTML=users.map(u=>`<div class="member"><div>${esc(u.name)}${u.admin?' · Admin':''}<small>${esc(u.email)}</small></div>${u.id!==state.user.id?`<div class="member-actions"><button class="text-button" data-reset-user="${u.id}" data-reset-name="${esc(u.name)}">Reset password</button><button class="text-button" data-remove-user="${u.id}">Remove access</button></div>`:''}</div>`).join('');
+ if(!$('#team-modal').open)$('#team-modal').showModal();
+}
+$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#login-error').textContent='';try{await post('login',Object.fromEntries(new FormData(e.target)));e.target.reset();await boot({afterLogin:true})}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false}};
 $('#signout').onclick=async()=>{try{await post('logout',{});showLogin()}catch(e){error(e)}};
 $('#add').onclick=()=>openEditor();$('#item-form').elements.type.onchange=syncEditorType;$('#search').oninput=render;$('#sort').onchange=render;for(const f of $$('.filters select'))f.onchange=render;
 $('#filter-toggle').onclick=()=>{$('#filters').hidden=!$('#filters').hidden;$('#filter-toggle').setAttribute('aria-expanded',String(!$('#filters').hidden))};
@@ -112,7 +124,29 @@ document.addEventListener('click',async e=>{const close=e.target.closest('.close
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!$('dialog[open]')&&!$('#app').hidden){e.preventDefault();$('#search').focus()}});
 $('#password-button').onclick=()=>{$('#password-form').reset();$('#password-error').textContent='';$('#password-modal').showModal()};
 $('#password-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await post('password',Object.fromEntries(new FormData(e.target)));$('#password-modal').close();showLogin();$('#login-error').textContent='Password updated. Please sign in with your new password.'}catch(err){$('#password-error').textContent=err.message}finally{e.submitter.disabled=false}};
-async function boot(){try{state.user=await api('me');$('#user-name').textContent=state.user.name;$('#initial').textContent=state.user.name[0].toUpperCase();$('#team').hidden=!state.user.admin;$('#login').hidden=true;$('#app').hidden=false;await load()}catch(e){if(!$('#app').hidden)error(e);else showLogin()}}
+async function boot({afterLogin=false}={}){
+ try{
+  state.user=await api('me');$('#user-name').textContent=state.user.name;$('#initial').textContent=state.user.name[0].toUpperCase();$('#team').hidden=!state.user.admin;$('#login').hidden=true;$('#app').hidden=false;await load();
+ }catch(e){
+  if(!$('#app').hidden){error(e);return}
+  showLogin();
+  if(afterLogin&&e.status===401&&e.code!=='access_removed')$('#login-error').textContent='Sign-in succeeded, but your browser did not keep the session. Open this website directly in a normal browser tab and allow its cookies.';
+  else if(afterLogin||e.status!==401)$('#login-error').textContent=e.message;
+ }
+}
 boot();
 
 setInterval(()=>{if(!$('#app').hidden&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);
+
+document.addEventListener('click',e=>{
+ const button=e.target.closest('[data-reset-user]');if(!button)return;
+ $('#reset-teammate-form').reset();$('#reset-teammate-form').elements.id.value=button.dataset.resetUser;
+ $('#reset-teammate-name').textContent=button.dataset.resetName;$('#reset-teammate-error').textContent='';$('#reset-teammate-modal').showModal();
+});
+$('#reset-teammate-form').onsubmit=async e=>{
+ e.preventDefault();const button=e.submitter;button.disabled=true;$('#reset-teammate-error').textContent='';
+ try{
+  const fd=new FormData(e.target);await post('users/'+fd.get('id')+'/password',{password:fd.get('password')});
+  e.target.reset();$('#reset-teammate-modal').close();$('#team-error').textContent='Password reset. Share the new library password privately with your teammate. No email was sent.';
+ }catch(err){$('#reset-teammate-error').textContent=err.message}finally{button.disabled=false}
+};

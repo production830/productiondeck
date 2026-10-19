@@ -63,6 +63,10 @@ Open **Manage team** from your administrator account. Create a name, email, and 
 
 All members can view, create, edit, and delete the shared references and shortlists. Only admins can manage membership. Removing a member blocks their library requests immediately, including photo requests, even if their login token has not expired. Password changes clear the current browser session and revoke refresh tokens; existing access tokens on other devices may last until Supabase's configured JWT expiry. Account removal is the immediate way to revoke library access.
 
+If a teammate cannot sign in, use **Manage team → Reset password** next to their existing account. Set a new temporary password of at least 12 characters and share it privately. This also confirms that existing authorized teammate's email without deleting their membership, changing their permissions, or modifying library records. The teammate can change the temporary password after signing in. This control does not send an invitation email.
+
+Sign-in errors distinguish incorrect credentials, accounts needing confirmation, disabled email/password sign-in, expired sessions, rate limiting, and temporary upstream outages. If the Email provider is disabled, enable it under Supabase Authentication's email provider settings while keeping public signup off. Browser session failures after an otherwise successful login have their own message. Concurrent API calls share one session refresh, and temporary upstream outages preserve existing session cookies.
+
 There is no public registration or in-app password-reset email flow. If an administrator loses their password, the Supabase project owner can use Auth administration to reset that user's password. Do not delete project data to reset an account.
 
 ## Casting sheet

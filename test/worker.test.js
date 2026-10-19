@@ -4,13 +4,22 @@ import {createHandler} from '../worker.js';
 const admin='11111111-1111-4111-8111-111111111111',crew='22222222-2222-4222-8222-222222222222';
 function fixture(){
  const tables={members:[{id:admin,email:'admin@example.test',name:'Admin',admin:true},{id:crew,email:'crew@example.test',name:'Crew',admin:false}],items:[],images:[],boards:[]};
- const objects=new Map(),calls=[];let storageFailure=false;
+ const objects=new Map(),calls=[];let storageFailure=false,strictAuth=false;
+ const authAccounts=new Map([[admin,{id:admin,email:'admin@example.test',password:'admin-password-long',confirmed:true}],[crew,{id:crew,email:'crew@example.test',password:'crew-password-long',confirmed:true}]]);
+ const issuedTokens=new Map([['admin-token',admin],['crew-token',crew]]);
  const response=(data,status=200)=>new Response(data===null?null:JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  const upstream=async(raw,options={})=>{
   const u=new URL(raw),p=u.pathname,m=options.method||'GET',body=typeof options.body==='string'?JSON.parse(options.body):options.body;
   calls.push({path:p,query:u.search,options});
   assert.equal(u.origin,'https://test-project.supabase.co');
   if(p==='/auth/v1/token'){
+   if(strictAuth&&!body.refresh_token){
+    const account=[...authAccounts.values()].find(a=>a.email===body.email);
+    if(!account||account.password!==body.password)return response({error_code:'invalid_credentials'},400);
+    if(!account.confirmed)return response({error_code:'email_not_confirmed'},400);
+    const token='token-'+account.id;issuedTokens.set(token,account.id);
+    return response({user:{id:account.id},access_token:token,refresh_token:'refresh-'+account.id,expires_in:3600});
+   }
    if(body.refresh_token)return response({user:{id:admin},access_token:'admin-token',refresh_token:'refresh-new',expires_in:3600});
    if(body.password==='wrong')return response({error:'bad password'},400);
    const id=body.email==='crew@example.test'?crew:admin;return response({user:{id},access_token:id===crew?'crew-token':'admin-token',refresh_token:'refresh',expires_in:3600});
@@ -18,10 +27,16 @@ function fixture(){
   if(p==='/auth/v1/user'){
    const token=options.headers.Authorization;if(token==='Bearer expired')return response({},401);
    if(m==='PUT')return response({id:admin});
-   return response({id:token==='Bearer crew-token'?crew:admin});
+   return response({id:issuedTokens.get(token.replace('Bearer ',''))||admin});
   }
   if(p==='/auth/v1/logout')return response(null,204);
-  if(p==='/auth/v1/admin/users'&&m==='POST')return response({id:crypto.randomUUID()});
+  if(p==='/auth/v1/admin/users'&&m==='POST'){
+   const id=crypto.randomUUID();authAccounts.set(id,{id,email:body.email,password:body.password,confirmed:body.email_confirm===true});return response({id});
+  }
+  if(p.startsWith('/auth/v1/admin/users/')&&m==='PUT'){
+   const id=p.split('/').pop(),account=authAccounts.get(id);if(!account)return response({},404);
+   account.password=body.password;if(body.email_confirm===true)account.confirmed=true;return response({id});
+  }
   if(p.startsWith('/auth/v1/admin/users/')&&m==='DELETE')return response({ok:true});
   if(p.startsWith('/rest/v1/pd_')){
    assert.equal(options.headers.apikey,'test-service-secret');
@@ -50,7 +65,7 @@ function fixture(){
  async function req(path,{method='GET',body,cookie='__Host-pd_access=admin-token',origin='https://library.example',headers={}}={}){
   return handle(new Request('https://library.example'+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(method!=='GET'?{Origin:origin}:{}),...headers},body:body===undefined?undefined:body instanceof Uint8Array?body:JSON.stringify(body)}),env);
  }
- return {req,tables,objects,calls,env,handle,setStorageFailure:value=>{storageFailure=value}};
+ return {req,tables,objects,calls,env,handle,upstream,authAccounts,enableStrictAuth:()=>{strictAuth=true},setStorageFailure:value=>{storageFailure=value}};
 }
 test('protected API and media reject anonymous, cross-origin, and nonmembers before data access',async()=>{
  const f=fixture();assert.equal((await f.req('/api/items',{cookie:''})).status,401);assert.equal((await f.req('/media/'+admin,{cookie:''})).status,401);assert.equal(f.calls.length,0);
@@ -123,4 +138,50 @@ test('casting accepts optional fields but blocks unsafe portfolio links',async()
  }
  r=await f.req('/api/items',{method:'POST',body:{...data,type:'prop',casting:{showreel:'javascript:alert(1)'}}});assert.equal(r.status,201);assert.equal(f.tables.items.at(-1).data.casting,undefined);
  assert.equal((await f.req('/api/items',{cookie:'',method:'POST',body:data})).status,401);
+});
+
+test('a teammate created with a temporary password can sign in and bootstrap their own session',async()=>{
+ const f=fixture();f.enableStrictAuth();const password='new-teammate-test-password';
+ let r=await f.req('/api/users',{method:'POST',body:{name:'Test teammate',email:'New.Team@example.test ',password}});assert.equal(r.status,201);
+ const member=f.tables.members.find(u=>u.email==='new.team@example.test');assert.ok(member);assert.equal(member.admin,false);
+ const account=f.authAccounts.get(member.id);assert.equal(account.confirmed,true);assert.equal(account.password,password);
+ r=await f.req('/api/login',{cookie:'',method:'POST',body:{email:'New.Team@Example.Test ',password}});assert.equal(r.status,200);
+ const cookie=r.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');assert.match(cookie,/__Host-pd_access=/);
+ r=await f.req('/api/me',{cookie});assert.equal(r.status,200);const user=await r.json();assert.equal(user.id,member.id);assert.equal(user.email,member.email);assert.equal(user.admin,false);
+ assert.equal((await f.req('/api/items',{cookie})).status,200);assert.equal((await f.req('/api/users',{cookie})).status,403);
+});
+test('password failures are distinct from expired sessions and confirmation errors',async()=>{
+ const f=fixture();f.enableStrictAuth();
+ let r=await f.req('/api/login',{cookie:'',method:'POST',body:{email:'crew@example.test',password:'incorrect'}});assert.equal(r.status,401);let b=await r.json();assert.equal(b.code,'invalid_credentials');assert.ok(!b.error.includes('expired'));
+ f.authAccounts.get(crew).confirmed=false;
+ r=await f.req('/api/login',{cookie:'',method:'POST',body:{email:'crew@example.test',password:'crew-password-long'}});assert.equal(r.status,403);b=await r.json();assert.equal(b.code,'email_not_confirmed');assert.equal(r.headers.get('set-cookie'),null);
+ r=await f.req('/api/me',{cookie:''});assert.equal((await r.json()).code,'session_expired');
+});
+test('administrator reset repairs an existing teammate without changing membership or library data',async()=>{
+ const f=fixture();f.enableStrictAuth();f.authAccounts.get(crew).confirmed=false;
+ f.tables.items.push({id:crypto.randomUUID(),data:{title:'Existing prop',type:'prop'}});const before=JSON.stringify(f.tables);
+ assert.equal((await f.req('/api/users/'+crew+'/password',{method:'POST',cookie:'__Host-pd_access=crew-token',body:{password:'replacement-password'}})).status,403);
+ assert.equal((await f.req('/api/users/'+admin+'/password',{method:'POST',body:{password:'replacement-password'}})).status,400);
+ assert.equal((await f.req('/api/users/'+crypto.randomUUID()+'/password',{method:'POST',body:{password:'replacement-password'}})).status,404);
+ assert.equal((await f.req('/api/users/'+crew+'/password',{method:'POST',body:{password:'short'}})).status,400);
+ const r=await f.req('/api/users/'+crew+'/password',{method:'POST',body:{password:'replacement-password'}});assert.equal(r.status,200);assert.equal(await r.text(),'{"ok":true}');assert.equal(JSON.stringify(f.tables),before);
+ assert.equal(f.authAccounts.get(crew).confirmed,true);
+ let login=await f.req('/api/login',{cookie:'',method:'POST',body:{email:'crew@example.test',password:'crew-password-long'}});assert.equal(login.status,401);
+ login=await f.req('/api/login',{cookie:'',method:'POST',body:{email:'crew@example.test',password:'replacement-password'}});assert.equal(login.status,200);
+ const update=f.calls.find(c=>c.path==='/auth/v1/admin/users/'+crew&&c.options.method==='PUT');assert.equal(update.options.headers.apikey,'test-service-secret');
+});
+test('upstream outages never masquerade as password failures or erase valid session cookies',async()=>{
+ const f=fixture();
+ for(const brokenPath of ['/auth/v1/user','/auth/v1/token']){
+  const handle=createHandler(async(url,options)=>new URL(url).pathname===brokenPath?new Response(JSON.stringify({error_code:'unexpected_failure',message:'private upstream details'}),{status:500}):f.upstream(url,options));
+  const login=brokenPath.endsWith('token');const request=new Request('https://library.example'+(login?'/api/login':'/api/me'),{method:login?'POST':'GET',headers:{Origin:'https://library.example',Cookie:'__Host-pd_access=admin-token'},body:login?JSON.stringify({email:'admin@example.test',password:'correct-password'}):undefined});
+  const r=await handle(request,f.env);assert.equal(r.status,503);assert.equal(r.headers.get('set-cookie'),null);const b=await r.json();assert.equal(b.code,'service_unavailable');assert.ok(!b.error.includes('expired'));assert.ok(!b.error.includes('private upstream'));
+ }
+});
+test('disabled email login is actionable and refresh failure clears only invalid sessions',async()=>{
+ const f=fixture();
+ const handle=createHandler(async(url,options)=>new URL(url).pathname==='/auth/v1/token'?new Response(JSON.stringify({error_code:'email_provider_disabled'}),{status:400}):f.upstream(url,options));
+ const r=await handle(new Request('https://library.example/api/login',{method:'POST',headers:{Origin:'https://library.example'},body:JSON.stringify({email:'crew@example.test',password:'test-password'})}),f.env);assert.equal(r.status,503);const b=await r.json();assert.equal(b.code,'email_provider_disabled');assert.match(b.error,/public signup can remain off/);
+ const refreshHandle=createHandler(async(url,options)=>new URL(url).pathname==='/auth/v1/token'?new Response(JSON.stringify({error_code:'refresh_token_not_found'}),{status:400}):f.upstream(url,options));
+ const expired=await refreshHandle(new Request('https://library.example/api/me',{headers:{Cookie:'__Host-pd_refresh=missing'}}),f.env);assert.equal(expired.status,401);assert.match(expired.headers.get('set-cookie'),/Max-Age=0/);
 });

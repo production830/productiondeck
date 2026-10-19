@@ -270,3 +270,5 @@ footer > span, .login-story-bottom { color: #667a52; }
  .talent-card .card-info h3 { font-size:13px; }
 }
 @media(max-width:360px) { .grid[data-kind="casting"] { grid-template-columns:1fr; } }
+
+.member-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}.member-actions .text-button{font-size:11px}#reset-teammate-error{color:#b74728;font-size:12px}#reset-teammate-form>p{font-size:13px;color:#566448}@media(max-width:500px){.member{align-items:flex-start}.member-actions{max-width:110px;flex-direction:column;align-items:flex-end}.member-actions .text-button{padding:5px 0}}

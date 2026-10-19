@@ -1,5 +1,5 @@
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
-const fail=(status,message)=>Object.assign(new Error(message),{status});
+const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
 const clean=(v,max=300)=>typeof v==='string'?v.trim().slice(0,max):'';
 const email=v=>clean(v,320).toLowerCase();
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -61,14 +61,25 @@ export function createHandler(fetcher=fetch){
    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(base))throw fail(503,'Check the Supabase Project URL in hosting settings.');
    async function upstream(path,{method='GET',data,access,anon=false,raw=false,headers={}}={}){
     const key=anon?env.SUPABASE_ANON_KEY:env.SUPABASE_SERVICE_ROLE_KEY;
-    const response=await fetcher(base+path,{method,headers:{apikey:key,Authorization:'Bearer '+(access||key),...(data!==undefined&&!raw?{'Content-Type':'application/json'}:{}),...headers},body:data===undefined?undefined:raw?data:JSON.stringify(data)});
+    let response;try{response=await fetcher(base+path,{method,headers:{apikey:key,Authorization:'Bearer '+(access||key),...(data!==undefined&&!raw?{'Content-Type':'application/json'}:{}),...headers},body:data===undefined?undefined:raw?data:JSON.stringify(data)});}catch{throw fail(503,'The sign-in or data service is temporarily unavailable. Please try again.','service_unavailable')}
     if(raw&&response.ok)return response;
     const text=await response.text();let value;try{value=text?JSON.parse(text):null}catch{value=null}
     if(!response.ok){
-     // Never send upstream messages that may contain infrastructure details to the browser.
-     if(response.status===429)throw fail(429,'Too many requests. Please wait and try again.');
-     if(path.startsWith('/auth/v1/token'))throw fail(401,'Email or password is incorrect, or the session has expired');
-     if(response.status===409||value?.code==='23505')throw fail(409,'This record already exists. Refresh and try again.');
+     // Expose only explicit, actionable error categories, never raw upstream details or tokens.
+     const auth=path.startsWith('/auth/'),code=value?.error_code||value?.code;
+     if(response.status===429)throw fail(429,'Too many sign-in attempts or requests. Please wait a few minutes and try again.','rate_limited');
+     if(response.status>=500)throw fail(503,'The sign-in or data service is temporarily unavailable. Please try again.','service_unavailable');
+     if(auth){
+      if(code==='email_not_confirmed')throw fail(403,'This account needs email confirmation. Ask your administrator to use Reset password in Manage team.','email_not_confirmed');
+      if(['email_provider_disabled','provider_disabled'].includes(code))throw fail(503,'Email/password sign-in is disabled in Supabase. Your administrator needs to enable the Email provider; public signup can remain off.','email_provider_disabled');
+      if(code==='user_banned')throw fail(403,'This account is disabled. Ask your administrator to check its Supabase Auth status.','account_disabled');
+      if(code==='same_password')throw fail(400,'Choose a new password that is different from the current password.','same_password');
+      if(code==='weak_password')throw fail(400,'Choose a stronger password of at least 12 characters.','weak_password');
+      if(['email_exists','user_already_exists'].includes(code))throw fail(409,'This login already exists. Use Reset password for the existing teammate.','account_exists');
+      if(path.includes('grant_type=refresh_token')||path==='/auth/v1/user'&&response.status===401)throw fail(401,'Your session has expired. Please sign in again.','session_expired');
+      if(path.includes('grant_type=password')&&(['invalid_credentials','invalid_grant'].includes(code)||[400,401,422].includes(response.status)))throw fail(401,'Email or password is incorrect. Use the password set for this library. Your administrator can reset it in Manage team.','invalid_credentials');
+     }
+     if(response.status===409||code==='23505')throw fail(409,'This record already exists. Refresh and try again.');
      throw fail(502,'Could not complete the request. Check the library configuration and try again.');
     }
     return value;
@@ -88,12 +99,12 @@ export function createHandler(fetcher=fetch){
    }
    // Refresh tokens only on the single bootstrap request. Concurrent image requests never rotate cookies.
    let access=supplied['__Host-pd_access'],identity;
-   if(access)try{identity=await authUser(access)}catch(e){if(e.status===429)throw e}
+   if(access)try{identity=await authUser(access)}catch(e){if(e.status!==401)throw e}
    if(!identity&&p==='/api/me'&&supplied['__Host-pd_refresh']){
-    try{const session=await upstream('/auth/v1/token?grant_type=refresh_token',{method:'POST',anon:true,data:{refresh_token:supplied['__Host-pd_refresh']}});access=session.access_token;identity=session.user;setSession(session)}catch{clear()}
+    try{const session=await upstream('/auth/v1/token?grant_type=refresh_token',{method:'POST',anon:true,data:{refresh_token:supplied['__Host-pd_refresh']}});access=session.access_token;identity=session.user;setSession(session)}catch(e){if(e.status!==401)throw e;clear()}
    }
-   if(!identity)throw fail(401,'Please sign in');
-   const user=await membership(identity.id);if(!user){clear();throw fail(401,'Your access to this library has been removed')}
+   if(!identity)throw fail(401,'Please sign in.','session_expired');
+   const user=await membership(identity.id);if(!user){clear();throw fail(401,'Your access to this library has been removed. Ask your administrator.','access_removed')}
    if(p==='/api/me'&&request.method==='GET')return finish(json(user));
    if(p==='/api/password'&&request.method==='POST'){
     const b=await body(request);if(typeof b.current!=='string'||b.current.length>1024||typeof b.password!=='string'||b.password.length<12||b.password.length>1024)throw fail(400,'Use a password between 12 and 1024 characters');
@@ -112,6 +123,16 @@ export function createHandler(fetcher=fetch){
      try{await rest('members','',{method:'POST',data:{id,email:email(b.email),name:clean(b.name)||email(b.email),admin:false}})}catch(e){try{await upstream('/auth/v1/admin/users/'+id,{method:'DELETE'})}catch{}throw e}
      return finish(json({ok:true},201));
     }
+   }
+   const resetMatch=p.match(/^\/api\/users\/([^/]+)\/password$/);
+   if(resetMatch&&request.method==='POST'){
+    if(!user.admin)throw fail(403,'Administrator access required');
+    const id=checkId(resetMatch[1]);if(id===user.id)throw fail(400,'Use Change password for your own account.');
+    if(!await membership(id))throw fail(404,'Teammate not found');
+    const b=await body(request);if(typeof b.password!=='string'||b.password.length<12||b.password.length>1024)throw fail(400,'Use a password between 12 and 1024 characters');
+    // The administrator already authorizes this email as a teammate. No invitation email is sent.
+    await upstream('/auth/v1/admin/users/'+id,{method:'PUT',data:{password:b.password,email_confirm:true}});
+    return finish(json({ok:true}));
    }
    let match=p.match(/^\/api\/users\/([^/]+)$/);
    if(match&&request.method==='DELETE'){
@@ -166,7 +187,7 @@ export function createHandler(fetcher=fetch){
     await rest('boards','id=eq.'+id,{method:'PATCH',data:{items:[...new Set(b.items)]}});return finish(json({ok:true}));
    }
    throw fail(404,'Not found');
-  }catch(e){return finish(json({error:e.status?e.message:'Something went wrong. Please try again.'},e.status||500))}
+  }catch(e){return finish(json({error:e.status?e.message:'Something went wrong. Please try again.',...(e.code?{code:e.code}:{})},e.status||500))}
  };
 }
 export default {fetch:createHandler()};
