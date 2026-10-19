@@ -68,6 +68,7 @@ function render(){
  }).join(''):`<div class="empty"><span>${casting?'◎':'✳'}</span><h2>${casting?(scope.length?'No matching talent.':'Meet your next cast.'):(state.items.length?'Nothing here. Yet.':'Your collection starts here.')}</h2><p>${casting?'Build your team’s casting sheet with headshots, skills, languages, and people you’ve worked with.':state.items.length?'Try another search, clear your filters, or add a reference to this collection.':'Start with a location, a prop, or a talented person. Add photos and tags so your team can find them next time.'}</p><button class="primary" id="empty-add">${casting?'+ Add talent':'+ Add a reference'}</button></div>`;
 }
 function syncEditorType(){
+ window.ProductiondeckAIEditor?.reset();
  const form=$('#item-form'),casting=form.elements.type.value==='casting';
  $('#casting-fields').hidden=!casting;for(const el of $('#casting-fields').querySelectorAll('input,select'))el.disabled=!casting;
  $('#editor-setting').hidden=casting;$('#editor-address').hidden=casting;
@@ -81,7 +82,7 @@ function syncEditorType(){
  if(!form.elements.id.value)$('#editor-title').textContent=casting?'Add talent':'Add a reference';
 }
 function openEditor(item){
- $('#item-form').reset();$('#save-error').textContent='';const form=$('#item-form');form.elements.id.value=item?.id||'';
+ window.ProductiondeckAIEditor?.reset();$('#item-form').reset();$('#save-error').textContent='';const form=$('#item-form');form.elements.id.value=item?.id||'';
  if(item){
   for(const [k,v] of Object.entries(item)){if(form.elements[k]&&k!=='images')form.elements[k].value=k==='tags'?v.join(', '):v}
   const c=item.casting||{};for(const [k,v] of Object.entries({cast_age:c.playingAge,cast_height:c.height,cast_languages:(c.languages||[]).join(', '),cast_skills:(c.skills||[]).join(', '),cast_history:c.workedBefore||'unknown',cast_reel:c.showreel}))form.elements[k].value=v||'';
@@ -134,6 +135,7 @@ async function team(){
 }
 $('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#login-error').textContent='';try{await post('login',Object.fromEntries(new FormData(e.target)));e.target.reset();await boot({afterLogin:true})}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false}};
 $('#signout').onclick=async()=>{try{await post('logout',{});showLogin()}catch(e){error(e)}};
+window.ProductiondeckAIEditor?.init({getSavedPhotos:()=>{const id=$('#item-form').elements.id.value;return state.items.find(x=>x.id===id)?.images||[]}});
 $('#add').onclick=()=>openEditor();$('#item-form').elements.type.onchange=syncEditorType;$('#search').oninput=render;$('#sort').onchange=render;for(const f of $$('.filters select'))f.onchange=render;
 $('#filter-toggle').onclick=()=>{$('#filters').hidden=!$('#filters').hidden;$('#filter-toggle').setAttribute('aria-expanded',String(!$('#filters').hidden))};
 $('#reset').onclick=()=>{$$('.filters select').forEach(s=>s.value='');state.tag='';$('#search').value='';render()};
