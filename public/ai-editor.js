@@ -3,14 +3,15 @@
  let worker=null,run=0,active=false,settings,timer;
  const $=s=>document.querySelector(s),form=()=>$('#item-form');
  const status=message=>{$('#ai-status').textContent=message};
+ function report(data){status(data.message);$('#ai-error-code').textContent='Error: '+data.code+' · Step: '+data.stage;$('#ai-error-detail').textContent=data.detail;$('#ai-error-details').hidden=false}
  function stop(){run++;active=false;clearTimeout(timer);worker?.terminate();worker=null;$('#ai-suggest').disabled=false;$('#ai-suggest').textContent='✧ Suggest tags with AI'}
- function reset(){if(!$('#ai-tagging'))return;stop();$('#ai-results').hidden=true;$('#ai-choices').replaceChildren();status('');$('#ai-tagging').hidden=form().elements.type.value!=='location'}
+ function reset(){if(!$('#ai-tagging'))return;stop();$('#ai-results').hidden=true;$('#ai-choices').replaceChildren();status('');$('#ai-error-details').hidden=true;$('#ai-error-details').open=false;$('#ai-tagging').hidden=form().elements.type.value!=='location'}
  function finish(){active=false;clearTimeout(timer);$('#ai-suggest').disabled=false;$('#ai-suggest').textContent='✧ Suggest tags with AI'}
  function selected(){return [...$('#ai-choices').querySelectorAll('input:checked')].map(x=>x.value)}
  async function suggest(){
   if(active||form().elements.type.value!=='location')return;
   const files=[...form().elements.photos.files],saved=settings.getSavedPhotos();
-  $('#ai-results').hidden=true;$('#ai-choices').replaceChildren();
+  $('#ai-results').hidden=true;$('#ai-error-details').hidden=true;$('#ai-error-details').open=false;$('#ai-choices').replaceChildren();
   if(!files.length&&!saved.length){status('Choose at least one location photo below, then click Suggest tags with AI.');return}
   if(!window.Worker||!window.WebAssembly){status('This browser does not support local AI. Try a recent Chrome or Edge browser.');return}
   if(files.some(f=>!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>8*1024*1024)){status('Choose JPEG, PNG or WebP photos, each 8 MB or smaller.');return}
@@ -25,12 +26,12 @@
     if(id!==run)return;photos.push(blob);
    }
    if(id!==run)return;
-   worker ||= new Worker('/ai-worker.js',{type:'module'});
+   worker ||= new Worker('/ai-worker.js?v=2',{type:'module'});
    worker.onmessage=({data})=>{
     if(data.id!==run||!active)return;
     if(data.type==='status'){status(data.message);return}
     finish();
-    if(data.type==='error'){worker.terminate();worker=null;status(data.message);return}
+    if(data.type==='error'){worker.terminate();worker=null;report(data);return}
     if(data.type!=='result')return;
     const existing=new Set(form().elements.tags.value.split(',').map(x=>x.trim().toLowerCase()));
     const tags=data.tags.filter(t=>!existing.has(t.toLowerCase()));
