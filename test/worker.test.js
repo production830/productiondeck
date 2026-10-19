@@ -33,6 +33,9 @@ function fixture(){
   if(p==='/auth/v1/admin/users'&&m==='POST'){
    const id=crypto.randomUUID();authAccounts.set(id,{id,email:body.email,password:body.password,confirmed:body.email_confirm===true});return response({id});
   }
+  if(p.startsWith('/auth/v1/admin/users/')&&m==='GET'){
+   const account=authAccounts.get(p.split('/').pop());return account?response({id:account.id,email:account.email,email_confirmed_at:account.confirmed?'2026-01-01T00:00:00Z':null}):response({},404);
+  }
   if(p.startsWith('/auth/v1/admin/users/')&&m==='PUT'){
    const id=p.split('/').pop(),account=authAccounts.get(id);if(!account)return response({},404);
    account.password=body.password;if(body.email_confirm===true)account.confirmed=true;return response({id});
@@ -184,4 +187,35 @@ test('disabled email login is actionable and refresh failure clears only invalid
  const r=await handle(new Request('https://library.example/api/login',{method:'POST',headers:{Origin:'https://library.example'},body:JSON.stringify({email:'crew@example.test',password:'test-password'})}),f.env);assert.equal(r.status,503);const b=await r.json();assert.equal(b.code,'email_provider_disabled');assert.match(b.error,/public signup can remain off/);
  const refreshHandle=createHandler(async(url,options)=>new URL(url).pathname==='/auth/v1/token'?new Response(JSON.stringify({error_code:'refresh_token_not_found'}),{status:400}):f.upstream(url,options));
  const expired=await refreshHandle(new Request('https://library.example/api/me',{headers:{Cookie:'__Host-pd_refresh=missing'}}),f.env);assert.equal(expired.status,401);assert.match(expired.headers.get('set-cookie'),/Max-Age=0/);
+});
+
+test('admin can test a teammate login without changing the password or issuing browser session cookies',async()=>{
+ const f=fixture();f.enableStrictAuth();const before=JSON.stringify(f.tables);
+ assert.equal((await f.req('/api/users/'+crew+'/check-login',{method:'POST',cookie:'__Host-pd_access=crew-token',body:{password:'crew-password-long'}})).status,403);
+ let r=await f.req('/api/users/'+crew+'/check-login',{method:'POST',body:{password:'wrong'}});assert.equal(r.status,401);assert.equal((await r.json()).code,'invalid_credentials');
+ r=await f.req('/api/users/'+crew+'/check-login',{method:'POST',body:{password:'crew-password-long'}});assert.equal(r.status,200);assert.match((await r.json()).message,/No password was changed/);assert.equal(r.headers.get('set-cookie'),null);
+ assert.equal(f.authAccounts.get(crew).password,'crew-password-long');assert.equal(JSON.stringify(f.tables),before);
+ assert.ok(f.calls.some(c=>c.path==='/auth/v1/logout'&&c.query==='?scope=local'));
+ assert.ok(!f.calls.some(c=>c.path.startsWith('/auth/v1/admin/users/')&&c.options.method==='PUT'));
+});
+test('reset never claims success when the newly submitted password still fails login',async()=>{
+ const f=fixture();f.enableStrictAuth();
+ const handle=createHandler(async(url,options)=>new URL(url).pathname==='/auth/v1/token'?new Response(JSON.stringify({error_code:'invalid_credentials'}),{status:400}):f.upstream(url,options));
+ const r=await handle(new Request('https://library.example/api/users/'+crew+'/password',{method:'POST',headers:{Origin:'https://library.example',Cookie:'__Host-pd_access=admin-token'},body:JSON.stringify({password:'new-long-password'})}),f.env);
+ assert.equal(r.status,401);const b=await r.json();assert.equal(b.code,'invalid_credentials');assert.match(b.error,/did not verify sign-in/);
+});
+test('a team-list email mismatch is detected before any password is changed',async()=>{
+ const f=fixture();f.enableStrictAuth();f.authAccounts.get(crew).email='different@example.test';
+ const r=await f.req('/api/users/'+crew+'/password',{method:'POST',body:{password:'new-long-password'}});assert.equal(r.status,409);assert.equal((await r.json()).code,'account_email_mismatch');
+ assert.equal(f.authAccounts.get(crew).password,'crew-password-long');assert.ok(!f.calls.some(c=>c.path.endsWith('/'+crew)&&c.options.method==='PUT'));
+});
+test('wrong-project legacy keys fail configuration checks rather than blaming a password',async()=>{
+ const f=fixture();const key='header.'+Buffer.from(JSON.stringify({ref:'another-project'})).toString('base64url')+'.signature';
+ const r=await f.handle(new Request('https://library.example/api/login',{method:'POST',headers:{Origin:'https://library.example'},body:JSON.stringify({email:'crew@example.test',password:'test-password'})}),{...f.env,SUPABASE_ANON_KEY:key});
+ assert.equal(r.status,503);assert.equal((await r.json()).code,'auth_project_mismatch');assert.equal(f.calls.length,0);
+});
+test('an invalid Supabase API key is not reported as incorrect teammate credentials',async()=>{
+ const f=fixture();const handle=createHandler(async()=>new Response(JSON.stringify({message:'Invalid API key'}),{status:401}));
+ const r=await handle(new Request('https://library.example/api/login',{method:'POST',headers:{Origin:'https://library.example'},body:JSON.stringify({email:'crew@example.test',password:'test-password'})}),f.env);
+ assert.equal(r.status,503);assert.equal((await r.json()).code,'auth_key_invalid');
 });

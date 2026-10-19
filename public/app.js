@@ -144,9 +144,18 @@ document.addEventListener('click',e=>{
  $('#reset-teammate-name').textContent=button.dataset.resetName;$('#reset-teammate-error').textContent='';$('#reset-teammate-modal').showModal();
 });
 $('#reset-teammate-form').onsubmit=async e=>{
- e.preventDefault();const button=e.submitter;button.disabled=true;$('#reset-teammate-error').textContent='';
+ e.preventDefault();const button=e.submitter;button.disabled=true;$('#test-teammate-login').disabled=true;$('#reset-teammate-error').textContent='';
  try{
   const fd=new FormData(e.target);await post('users/'+fd.get('id')+'/password',{password:fd.get('password')});
-  e.target.reset();$('#reset-teammate-modal').close();$('#team-error').textContent='Password reset. Share the new library password privately with your teammate. No email was sent.';
- }catch(err){$('#reset-teammate-error').textContent=err.message}finally{button.disabled=false}
+  e.target.reset();$('#reset-teammate-modal').close();$('#team-error').textContent='Password reset and sign-in verified with Supabase. Share the new library password privately with your teammate.';
+ }catch(err){$('#reset-teammate-error').textContent=err.message+(err.code?' (Code: '+err.code+')':'')}finally{button.disabled=false;$('#test-teammate-login').disabled=false}
+};
+
+$('#test-teammate-login').onclick=async()=>{
+ const form=$('#reset-teammate-form'),password=form.elements.password.value,button=$('#test-teammate-login');
+ if(!password){$('#reset-teammate-error').textContent='Enter the library password you want to test.';return}
+ button.disabled=true;form.querySelector('button.primary').disabled=true;$('#reset-teammate-error').textContent='Checking with Supabase…';
+ try{const result=await post('users/'+form.elements.id.value+'/check-login',{password});$('#reset-teammate-error').textContent=result.message}
+ catch(err){$('#reset-teammate-error').textContent=err.message+(err.code?' (Code: '+err.code+')':'')}
+ finally{button.disabled=false;form.querySelector('button.primary').disabled=false}
 };
