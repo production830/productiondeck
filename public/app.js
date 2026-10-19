@@ -223,11 +223,11 @@ function routeWorkspace(){
  const view={'#locations':'location','#props':'prop','#casting':'casting'}[location.hash];if(view){state.view=view;state.tag='';$('#search').value='';$$('.filters select').forEach(s=>s.value='')}
  render();
 }
-window.addEventListener('hashchange',routeWorkspace);
+window.addEventListener('hashchange',()=>{routeWorkspace();if(state.user&&!$('#app').hidden)api('me').then(()=>load()).catch(error)});
 document.addEventListener('click',async e=>{const remove=e.target.closest('[data-remove-deck-item]');if(!remove)return;const board=state.boards.find(x=>x.id===state.view);if(!board)return;remove.disabled=true;try{await post('boards/'+board.id,{items:board.items.filter(id=>id!==remove.dataset.removeDeckItem)},'PUT');await load()}catch(err){remove.disabled=false;error(err)}});
 boot();
 
-setInterval(()=>{if(!$('#app').hidden&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);
+setInterval(()=>{if(state.user&&!$('dialog[open]'))api('me').catch(error)},15*60*1000);
 
 document.addEventListener('click',e=>{
  const button=e.target.closest('[data-reset-user]');if(!button)return;
