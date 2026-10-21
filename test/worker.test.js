@@ -44,7 +44,7 @@ function fixture(){
   if(p.startsWith('/rest/v1/pd_')){
    assert.equal(options.headers.apikey,'test-service-secret');
    const table=p.split('pd_')[1],rows=tables[table];assert.ok(rows,'Unknown table '+table);
-   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>{const field=key.startsWith('data->>')?row.data?.[key.slice(7)]:row[key];return value.startsWith('eq.')?String(field)===value.slice(3):value.startsWith('neq.')?String(field)!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(field)):true}));
+   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>{const field=key.startsWith('data->>')?row.data?.[key.slice(7)]:row[key];return value.startsWith('eq.')?String(field)===value.slice(3):value.startsWith('not.in.(')?!value.slice(8,-1).split(',').includes(String(field)):value.startsWith('neq.')?String(field)!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(field)):true}));
    if(m==='GET'){const limit=Number(u.searchParams.get('limit')||1000),offset=Number(u.searchParams.get('offset')||0);return response(filter(rows).slice(offset,offset+limit))}
    if(m==='POST'){
     if(table==='images'&&rows.some(r=>r.item_id===body.item_id&&r.slot===body.slot))return response({code:'23505'},409);
@@ -319,4 +319,20 @@ test('schedule references are type checked and snapshotted, and removed referenc
 test('schedule mutations reject bad durations, dates and shapes atomically, and require membership',async()=>{
  const f=fixture(),body=scheduleBody();for(const patch of [{date:'2026-02-30'},{startTime:'25:00'},{rows:[{...body.rows[0],duration:0}]},{rows:[{...body.rows[0],duration:721}]},{rows:[{...body.rows[0],talentIds:['not-a-uuid']}]},{rows:[body.rows[0],body.rows[0]]}])assert.equal((await f.req('/api/schedules',{method:'POST',body:{...body,...patch}})).status,400);
  assert.equal(f.tables.items.length,0);assert.equal((await f.req('/api/schedules',{cookie:''})).status,401);assert.equal((await f.req('/api/schedules',{method:'POST',body,cookie:''})).status,401);
+});
+
+test('call sheets are shared private documents with atomic revision checks and independent deletion',async()=>{
+ const f=fixture(),body=ProductiondeckCallSheet.fresh();body.title='Call sheet Çela';body.date='2026-10-21';body.generalCall='07:30';body.hospital='Test hospital';
+ let response=await f.req('/api/call-sheets',{method:'POST',body});assert.equal(response.status,201);const sheet=await response.json();assert(sheet.revision);assert.equal((await(await f.req('/api/items')).json()).length,0);assert.equal((await(await f.req('/api/schedules')).json()).length,0);
+ assert.equal((await(await f.req('/api/call-sheets',{cookie:'__Host-pd_access=crew-token'})).json()).length,1);
+ for(const method of ['PUT','DELETE'])assert.equal((await f.req('/api/items/'+sheet.id,{method,body:method==='PUT'?{title:'No',type:'location'}:undefined})).status,404);
+ assert.equal((await f.req('/api/items/'+sheet.id+'/images',{method:'POST',raw:new Uint8Array([255,216,255])})).status,404);assert.equal((await f.req('/api/schedules/'+sheet.id,{method:'DELETE'})).status,404);
+ response=await f.req('/api/call-sheets/'+sheet.id,{method:'PUT',body:{...body,title:'Updated',revision:sheet.revision}});assert.equal(response.status,200);const updated=await response.json();assert.notEqual(updated.revision,sheet.revision);
+ assert.equal((await f.req('/api/call-sheets/'+sheet.id,{method:'PUT',body:{...body,revision:sheet.revision}})).status,409);assert.equal((await(await f.req('/api/call-sheets/'+sheet.id)).json()).title,'Updated');
+ const schedule=await(await f.req('/api/schedules',{method:'POST',body:scheduleBody()})).json();assert.equal((await f.req('/api/call-sheets/'+schedule.id,{method:'DELETE'})).status,404);
+ assert.equal((await f.req('/api/call-sheets/'+sheet.id,{method:'DELETE'})).status,200);assert.equal((await f.req('/api/call-sheets/'+sheet.id)).status,404);assert.equal((await(await f.req('/api/schedules')).json()).length,1);
+});
+test('call sheet validation and membership checks reject invalid writes without creating records',async()=>{
+ const f=fixture(),body=ProductiondeckCallSheet.fresh();for(const patch of [{dayNumber:2,totalDays:1},{date:'2026-02-30'},{generalCall:'24:00'},{locations:[{...body.locations[0],mapUrl:'http://example.test'}]}])assert.equal((await f.req('/api/call-sheets',{method:'POST',body:{...body,...patch}})).status,400);assert.equal(f.tables.items.length,0);
+ assert.equal((await f.req('/api/call-sheets',{cookie:''})).status,401);assert.equal((await f.req('/api/call-sheets',{method:'POST',body,cookie:''})).status,401);assert.equal((await f.req('/api/call-sheets',{method:'POST',body,origin:'https://other.test'})).status,403);
 });

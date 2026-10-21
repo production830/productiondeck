@@ -1,7 +1,10 @@
 import './public/taxonomy.js';
 import './public/schedule-model.js';
+import './public/call-sheet-model.js';
+const callSheets=globalThis.ProductiondeckCallSheet;
 const schedules=globalThis.ProductiondeckSchedule;
 const isSchedule=data=>data?.type==='shooting_schedule';
+const isDocument=data=>isSchedule(data)||data?.type==='call_sheet';
 const taxonomy=globalThis.ProductiondeckTaxonomy;
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
 const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
@@ -184,16 +187,16 @@ export function createHandler(fetcher=fetch){
    if(p==='/api/items'&&request.method==='GET'){
     // PostgREST defaults to 1,000 rows; paginate to avoid silently dropping library records.
     const all=async(table,query)=>{let rows=[],page;do{page=await rest(table,query+'&limit=500&offset='+rows.length);rows.push(...page)}while(page.length===500);return rows};
-    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=neq.shooting_schedule&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
+    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=not.in.(shooting_schedule,call_sheet)&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
     const groups=new Map();for(const im of images){if(!groups.has(im.item_id))groups.set(im.item_id,[]);groups.get(im.item_id).push(im)}
-    return finish(json(items.filter(r=>!isSchedule(r.data)).map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
+    return finish(json(items.filter(r=>!isDocument(r.data)).map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
    if(p==='/api/items'&&request.method==='POST'){
     const data=itemData(await body(request)),id=crypto.randomUUID();if(data.coverImage)throw fail(400,'Upload photos before choosing a thumbnail');await rest('items','',{method:'POST',data:{id,data}});return finish(json({id},201));
    }
    match=p.match(/^\/api\/items\/([^/]+)$/);
    if(match&&['PUT','DELETE'].includes(request.method)){
-    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length||isSchedule(rows[0].data))throw fail(404,'Reference not found');
+    const id=checkId(match[1]),rows=await rest('items','id=eq.'+id+'&select=id,data');if(!rows.length||isDocument(rows[0].data))throw fail(404,'Reference not found');
     if(request.method==='PUT'){
      const b=await body(request),data=itemData(b,rows[0].data);
      if(!Object.hasOwn(b,'city'))data.city=taxonomy.canonicalCity(rows[0].data.city)||rows[0].data.city||'';
@@ -210,7 +213,7 @@ export function createHandler(fetcher=fetch){
    }
    match=p.match(/^\/api\/items\/([^/]+)\/images$/);
    if(match&&request.method==='POST'){
-    const item_id=checkId(match[1]),records=await rest('items','id=eq.'+item_id+'&select=id,data');if(!records.length||isSchedule(records[0].data))throw fail(404,'Reference not found');
+    const item_id=checkId(match[1]),records=await rest('items','id=eq.'+item_id+'&select=id,data');if(!records.length||isDocument(records[0].data))throw fail(404,'Reference not found');
     const photoLimit=['location','prop'].includes(records[0].data?.type)?20:12;
     const taken=await rest('images','item_id=eq.'+item_id+'&select=slot');let slot=0;while(taken.some(im=>im.slot===slot))slot++;if(slot>=photoLimit)throw fail(400,'Maximum '+photoLimit+' photos for this reference');
     const data=await bytes(request,8*1024*1024),mime=imageMime(data),id=crypto.randomUUID();
@@ -223,6 +226,23 @@ export function createHandler(fetcher=fetch){
    if(match&&request.method==='GET'){
     const id=checkId(match[1]),images=await rest('images','id=eq.'+id+'&select=mime');if(!images.length)throw fail(404,'Image not found');
     const photo=await upstream('/storage/v1/object/authenticated/'+bucket+'/'+id,{raw:true});return finish(new Response(photo.body,{headers:{...security,'Content-Type':images[0].mime}}));
+   }
+   match=p.match(/^\/api\/call-sheets(?:\/([^/]+))?$/);
+   if(match&&['GET','POST','PUT','DELETE'].includes(request.method)){
+    const id=match[1]?checkId(match[1]):'',query='data->>type=eq.call_sheet';let previous;
+    if(request.method==='GET'&&!id){let rows=[],page;do{page=await rest('items',query+'&select=id,data,created&order=created.asc,id&limit=100&offset='+rows.length);rows.push(...page)}while(page.length===100);return finish(json(rows.filter(row=>row.data?.type==='call_sheet').map(row=>({...row.data,id:row.id}))))}
+    if(id){const rows=await rest('items','id=eq.'+id+'&'+query+'&select=id,data');previous=rows[0];if(previous?.data?.type!=='call_sheet')throw fail(404,'Call sheet not found')}
+    if(request.method==='GET'&&id)return finish(json({...previous.data,id:previous.id}));
+    if(request.method==='DELETE'&&id){await rest('items','id=eq.'+id+'&'+query,{method:'DELETE'});return finish(json({ok:true}))}
+    if(request.method==='POST'&&!id||request.method==='PUT'&&id){
+     const b=await body(request);if(previous&&b.revision!==previous.data.revision)throw fail(409,'This call sheet was changed by someone else. Reopen it before saving.');
+     let data;try{data=callSheets.validate(b)}catch(error){throw fail(400,error.message)}
+     const document={...data,type:'call_sheet',revision:crypto.randomUUID(),updated:new Date().toISOString()},sheetId=id||crypto.randomUUID();
+     if(previous){const changed=await rest('items','id=eq.'+id+'&'+query+'&data->>revision=eq.'+previous.data.revision,{method:'PATCH',data:{data:document},headers:{Prefer:'return=representation'}});if(!changed?.length)throw fail(409,'This call sheet changed while saving. Reopen it before saving.')}
+     else await rest('items','',{method:'POST',data:{id:sheetId,data:document}});
+     return finish(json({...document,id:sheetId},previous?200:201));
+    }
+    throw fail(405,'Method not allowed');
    }
    // Schedules are private JSON documents in the existing data store, isolated from library references.
    match=p.match(/^\/api\/schedules(?:\/([^/]+))?$/);
