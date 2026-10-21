@@ -5,3 +5,4 @@ import './pdf-export.test.js';
 import './schedule.test.js';
 import './call-sheet.test.js';
 import './crew.test.js';
+import './casting-application.test.js';

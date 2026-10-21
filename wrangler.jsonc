@@ -16,5 +16,23 @@
   },
   "build": {
     "command": "node scripts/vendor-pdf.mjs"
-  }
+  },
+  "ratelimits": [
+    {
+      "name": "CASTING_IP_LIMIT",
+      "namespace_id": "830101",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
+    },
+    {
+      "name": "CASTING_GLOBAL_LIMIT",
+      "namespace_id": "830102",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ]
 }

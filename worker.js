@@ -1,4 +1,5 @@
 import './public/taxonomy.js';
+import {publicCasting,reviewCasting} from './casting-intake.js';
 import './public/schedule-model.js';
 import './public/call-sheet-model.js';
 import './public/crew-model.js';
@@ -6,7 +7,7 @@ const crewDirectory=globalThis.ProductiondeckCrew;
 const callSheets=globalThis.ProductiondeckCallSheet;
 const schedules=globalThis.ProductiondeckSchedule;
 const isSchedule=data=>data?.type==='shooting_schedule';
-const isDocument=data=>isSchedule(data)||['call_sheet','crew_contact'].includes(data?.type);
+const isDocument=data=>isSchedule(data)||['call_sheet','crew_contact','casting_application','casting_intake'].includes(data?.type);
 const taxonomy=globalThis.ProductiondeckTaxonomy;
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
 const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
@@ -110,6 +111,7 @@ export function createHandler(fetcher=fetch){
    }
    const rest=(table,query='',options={})=>upstream('/rest/v1/pd_'+table+(query?'?'+query:''),options);
    async function membership(id){const rows=await rest('members','id=eq.'+checkId(id)+'&select=id,email,name,admin');return rows[0]}
+   if(p.startsWith('/api/public/casting/'))return finish(json(await publicCasting({request,env,p,rest,upstream,bytes})));
    const authUser=access=>upstream('/auth/v1/user',{access,anon:true});
    if(p==='/api/login'&&request.method==='POST'){
     const b=await body(request);if(!email(b.email)||typeof b.password!=='string'||b.password.length>1024)throw fail(400,'Enter an email and password');
@@ -130,6 +132,7 @@ export function createHandler(fetcher=fetch){
    if(!identity)throw fail(401,'Please sign in.','session_expired');
    const user=await membership(identity.id);if(!user){clear();throw fail(401,'Your access to this library has been removed. Ask your administrator.','access_removed')}
    if(p==='/api/me'&&request.method==='GET')return finish(json(user));
+   if(p==='/api/casting-applications'||p.startsWith('/api/casting-applications/'))return finish(json(await reviewCasting({request,p,rest,upstream,body,user,itemData}))); 
    if(p==='/api/password'&&request.method==='POST'){
     const b=await body(request);if(typeof b.current!=='string'||b.current.length>1024||typeof b.password!=='string'||b.password.length<12||b.password.length>1024)throw fail(400,'Use a password between 12 and 1024 characters');
     const verification=await upstream('/auth/v1/token?grant_type=password',{method:'POST',anon:true,data:{email:user.email,password:b.current}});
@@ -191,7 +194,7 @@ export function createHandler(fetcher=fetch){
    if(p==='/api/items'&&request.method==='GET'){
     // PostgREST defaults to 1,000 rows; paginate to avoid silently dropping library records.
     const all=async(table,query)=>{let rows=[],page;do{page=await rest(table,query+'&limit=500&offset='+rows.length);rows.push(...page)}while(page.length===500);return rows};
-    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=not.in.(shooting_schedule,call_sheet,crew_contact)&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
+    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=not.in.(shooting_schedule,call_sheet,crew_contact,casting_application,casting_intake)&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
     const groups=new Map();for(const im of images){if(!groups.has(im.item_id))groups.set(im.item_id,[]);groups.get(im.item_id).push(im)}
     return finish(json(items.filter(r=>!isDocument(r.data)).map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
@@ -207,6 +210,7 @@ export function createHandler(fetcher=fetch){
      if(!Object.hasOwn(b,'subcategories'))data.subcategories=taxonomy.fromItem(rows[0].data);
      data.legacyCategory=clean(taxonomy.legacyOf(rows[0].data)||taxonomy.legacyOf(b),80);
      if(!Object.hasOwn(b,'coverImage'))data.coverImage=rows[0].data.coverImage||'';
+     if(rows[0].data.castingApplication)data.castingApplication=rows[0].data.castingApplication;
      if(data.coverImage&&!(await rest('images','id=eq.'+data.coverImage+'&item_id=eq.'+id+'&select=id')).length)throw fail(400,'Choose a thumbnail from this reference’s photos');
      await rest('items','id=eq.'+id,{method:'PATCH',data:{data}});return finish(json({ok:true}));
     }
