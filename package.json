@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "node test/run.js",
-    "check": "node --check worker.js && node --check public/app.js && node --check public/library-matches.js && node --check public/taxonomy.js && node --check public/deck-pdf.js && node --check scripts/vendor-pdf.mjs && node --check public/schedule-model.js && node --check public/schedule-ui.js && node --check public/schedule-pdf.js && node --check public/call-sheet-model.js && node --check public/call-sheet-ui.js && node --check public/call-sheet-pdf.js && node --check public/crew-model.js && node --check public/crew-ui.js && node --check casting-intake.js && node --check public/casting-application-model.js && node --check public/casting-apply.js && node --check public/casting-applications-ui.js",
+    "check": "node --check worker.js && node --check public/app.js && node --check public/library-matches.js && node --check public/taxonomy.js && node --check public/deck-pdf.js && node --check scripts/vendor-pdf.mjs && node --check public/schedule-model.js && node --check public/document-history.js && node --check public/schedule-ui.js && node --check public/schedule-pdf.js && node --check public/call-sheet-model.js && node --check public/call-sheet-ui.js && node --check public/call-sheet-pdf.js && node --check public/crew-model.js && node --check public/crew-ui.js && node --check casting-intake.js && node --check public/casting-application-model.js && node --check public/casting-apply.js && node --check public/casting-applications-ui.js",
     "dev": "npx wrangler@4 dev",
     "deploy": "npx wrangler@4 deploy"
   }

@@ -62,7 +62,7 @@ function render(){
   $('#'+t+'-count').textContent=state.items.filter(x=>t==='all'||x.type===t).length;
   $(`[data-view="${t}"]`).classList.toggle('active',state.view===t);
  }
- $('#board-nav').innerHTML=state.boards.map(b=>`<button data-view="${b.id}" class="${state.view===b.id?'active':''}"><span>▱</span>${esc(b.name)}<b>${b.items.filter(id=>state.items.some(i=>i.id===id)).length}</b></button>`).join('');
+ $('#board-nav').innerHTML=state.boards.map(b=>`<div class="deck-nav-row"><button data-view="${b.id}" class="${state.view===b.id?'active':''}"><span>▱</span><span class="deck-nav-name">${esc(b.name)}</span><b>${b.items.filter(id=>state.items.some(i=>i.id===id)).length}</b></button>${ProductiondeckHistory.menu('deck',b.id,b.name,'')}</div>`).join('');
  const scope=state.items.filter(x=>board?board.items.includes(x.id):state.view==='all'||x.type===state.view);
  const tags=[...new Set(scope.flatMap(x=>x.tags))].sort();
  $('#tags').innerHTML=(state.tag&&!tags.includes(state.tag)?[state.tag,...tags]:tags).slice(0,30).map(t=>`<button class="tag ${state.tag===t?'active':''}" data-tag="${esc(t)}">${esc(t)}</button>`).join('')||'<span class="muted">Tags will appear as your collection grows.</span>';
@@ -180,7 +180,11 @@ $('#board-form').onsubmit=async e=>{
  e.preventDefault();const button=e.submitter;button.disabled=true;$('#board-error').textContent='';
  try{if(deckSelection.size>500)throw Error('Choose up to 500 references for a Project Deck.');const id=e.target.elements.id.value,data={name:e.target.elements.name.value,items:[...deckSelection]};const result=await post(id?'boards/'+id:'boards',data,id?'PUT':'POST');state.view=id||result.id;$('#shortlist-modal').close();await load()}catch(err){$('#board-error').textContent=err.message}finally{button.disabled=false}
 };
-$('#delete-board').onclick=async()=>{if(!confirm('Delete this Project Deck? Its locations, props and casting profiles will stay in the library.'))return;try{await api('boards/'+state.view,{method:'DELETE'});state.view='all';await load()}catch(e){error(e)}};
+async function deleteDeck(board){if(!board||!confirm('Delete “'+board.name+'”? Its locations, props and casting profiles will stay in the library.'))return;try{await api('boards/'+board.id,{method:'DELETE'});if(state.view===board.id)state.view='all';await load()}catch(e){error(e)}}
+$('#delete-board').onclick=()=>deleteDeck(state.boards.find(board=>board.id===state.view));
+$('#board-nav').addEventListener('click',event=>{const button=event.target.closest('[data-deck-preview],[data-deck-open],[data-deck-delete]');if(!button)return;const board=state.boards.find(board=>board.id===(button.dataset.deckPreview||button.dataset.deckOpen||button.dataset.deckDelete));if(!board)return;
+ if(button.dataset.deckOpen)editDeck(board);else if(button.dataset.deckDelete)deleteDeck(board);else ProductiondeckHistory.preview({title:board.name,kind:'Project Deck',edit:()=>editDeck(board),html:'<div class="deck-preview-grid">'+board.items.map(id=>state.items.find(item=>item.id===id)).filter(Boolean).map(item=>'<article>'+ (item.images.length?'<img src="/media/'+galleryPhotos(item)[0]+'" alt="" loading="lazy">':'')+'<h3>'+esc(item.title)+'</h3><p>'+esc([kindName[item.type],item.city,...subcategoryText(item.subcategories)].filter(Boolean).join(' · '))+'</p></article>').join('')+'</div>'+(board.items.some(id=>state.items.some(item=>item.id===id))?'':'<p class="muted">No references in this deck yet.</p>')});
+});
 let coverURLs=[];
 function clearCoverPreviews(){for(const url of coverURLs)URL.revokeObjectURL(url);coverURLs=[]}
 function renderCoverPicker(){
