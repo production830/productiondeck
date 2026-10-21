@@ -1,10 +1,12 @@
 import './public/taxonomy.js';
 import './public/schedule-model.js';
 import './public/call-sheet-model.js';
+import './public/crew-model.js';
+const crewDirectory=globalThis.ProductiondeckCrew;
 const callSheets=globalThis.ProductiondeckCallSheet;
 const schedules=globalThis.ProductiondeckSchedule;
 const isSchedule=data=>data?.type==='shooting_schedule';
-const isDocument=data=>isSchedule(data)||data?.type==='call_sheet';
+const isDocument=data=>isSchedule(data)||['call_sheet','crew_contact'].includes(data?.type);
 const taxonomy=globalThis.ProductiondeckTaxonomy;
 // Cloudflare Workers + Supabase. Secrets stay in Worker environment bindings.
 const fail=(status,message,code)=>Object.assign(new Error(message),{status,code});
@@ -189,7 +191,7 @@ export function createHandler(fetcher=fetch){
    if(p==='/api/items'&&request.method==='GET'){
     // PostgREST defaults to 1,000 rows; paginate to avoid silently dropping library records.
     const all=async(table,query)=>{let rows=[],page;do{page=await rest(table,query+'&limit=500&offset='+rows.length);rows.push(...page)}while(page.length===500);return rows};
-    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=not.in.(shooting_schedule,call_sheet)&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
+    const [items,images]=await Promise.all([all('items','select=id,data,created&data->>type=not.in.(shooting_schedule,call_sheet,crew_contact)&order=created.desc,id'),all('images','select=id,item_id,slot&order=id')]);
     const groups=new Map();for(const im of images){if(!groups.has(im.item_id))groups.set(im.item_id,[]);groups.get(im.item_id).push(im)}
     return finish(json(items.filter(r=>!isDocument(r.data)).map(r=>({...taxonomy.record(r.data),id:r.id,created:r.created,images:(groups.get(r.id)||[]).sort((a,b)=>a.slot-b.slot).map(im=>im.id)}))));
    }
@@ -228,6 +230,23 @@ export function createHandler(fetcher=fetch){
    if(match&&request.method==='GET'){
     const id=checkId(match[1]),images=await rest('images','id=eq.'+id+'&select=mime');if(!images.length)throw fail(404,'Image not found');
     const photo=await upstream('/storage/v1/object/authenticated/'+bucket+'/'+id,{raw:true});return finish(new Response(photo.body,{headers:{...security,'Content-Type':images[0].mime}}));
+   }
+   match=p.match(/^\/api\/crew(?:\/([^/]+))?$/);
+   if(match&&['GET','POST','PUT','DELETE'].includes(request.method)){
+    const id=match[1]?checkId(match[1]):'',query='data->>type=eq.crew_contact';let previous;
+    if(request.method==='GET'&&!id){let rows=[],page;do{page=await rest('items',query+'&select=id,data,created&order=created.asc,id&limit=100&offset='+rows.length);rows.push(...page)}while(page.length===100);return finish(json(rows.filter(row=>row.data?.type==='crew_contact').map(row=>({...row.data,id:row.id}))))}
+    if(id){const rows=await rest('items','id=eq.'+id+'&'+query+'&select=id,data');previous=rows[0];if(previous?.data?.type!=='crew_contact')throw fail(404,'Crew member not found')}
+    if(request.method==='GET'&&id)return finish(json({...previous.data,id:previous.id}));
+    if(request.method==='DELETE'&&id){await rest('items','id=eq.'+id+'&'+query,{method:'DELETE'});return finish(json({ok:true}))}
+    if(request.method==='POST'&&!id||request.method==='PUT'&&id){
+     const b=await body(request);if(previous&&b.revision!==previous.data.revision)throw fail(409,'This crew member was changed by someone else. Reopen the record before saving.');
+     let data;try{data=crewDirectory.validate(b)}catch(error){throw fail(400,error.message)}
+     const document={...data,type:'crew_contact',revision:crypto.randomUUID(),updated:new Date().toISOString()},personId=id||crypto.randomUUID();
+     if(previous){const changed=await rest('items','id=eq.'+id+'&'+query+'&data->>revision=eq.'+previous.data.revision,{method:'PATCH',data:{data:document},headers:{Prefer:'return=representation'}});if(!changed?.length)throw fail(409,'This crew member changed while saving. Reopen the record before saving.')}
+     else await rest('items','',{method:'POST',data:{id:personId,data:document}});
+     return finish(json({...document,id:personId},previous?200:201));
+    }
+    throw fail(405,'Method not allowed');
    }
    match=p.match(/^\/api\/call-sheets(?:\/([^/]+))?$/);
    if(match&&['GET','POST','PUT','DELETE'].includes(request.method)){

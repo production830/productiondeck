@@ -4,3 +4,4 @@ import './taxonomy.test.js';
 import './pdf-export.test.js';
 import './schedule.test.js';
 import './call-sheet.test.js';
+import './crew.test.js';
