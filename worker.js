@@ -30,10 +30,12 @@ function itemData(b,previous={}){
  if(data.coverImage&&!uuid.test(data.coverImage))throw fail(400,'Choose a valid thumbnail photo');
  if(b.type==='casting'){
   const c=b.casting&&typeof b.casting==='object'&&!Array.isArray(b.casting)?b.casting:{};
+  const gender=Object.hasOwn(c,'gender')?c.gender:previous.type==='casting'?previous.casting?.gender||'':'';
+  if(gender!==''&&(typeof gender!=='string'||!Object.hasOwn(taxonomy.genders,gender)))throw fail(400,'Choose Male, Female, or leave gender unrecorded.');
   const list=(v,max)=>[...new Set((Array.isArray(v)?v:[]).map(x=>clean(x,max)).filter(Boolean))].slice(0,20);
   let showreel=clean(c.showreel,1000);
   if(showreel){try{const u=new URL(showreel);if(u.protocol!=='https:'||u.username||u.password)throw Error();showreel=u.href}catch{throw fail(400,'Use a complete HTTPS link for the showreel')}}
-  data.casting={playingAge:clean(c.playingAge,50),height:clean(c.height,50),languages:list(c.languages,50),skills:list(c.skills,80),showreel,workedBefore:['yes','no','unknown'].includes(c.workedBefore)?c.workedBefore:'unknown'};
+  data.casting={gender,playingAge:clean(c.playingAge,50),height:clean(c.height,50),languages:list(c.languages,50),skills:list(c.skills,80),showreel,workedBefore:['yes','no','unknown'].includes(c.workedBefore)?c.workedBefore:'unknown'};
  }
  return data;
 }

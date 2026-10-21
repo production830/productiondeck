@@ -1,6 +1,7 @@
 /* Shared fixed vocabulary used by both the browser and the Worker. */
 (()=>{
  const labels=Object.freeze({location:'Lokacion',prop:'Rekuizita',casting:'Kasting'});
+ const genders=Object.freeze({male:'Mashkull',female:'Femër'});
  const subcategories=Object.freeze([
   'City','Village','Outdoors','Indoors','Exterior','Interior','Car','Bus','Truck','Apartment','Building','Corporate','Office','Field','Stadium','Medical',
   'House','Villa','Loft','Penthouse','Studio','Bedroom','Living Room','Kitchen','Bathroom','Dining Room','Hallway','Staircase','Elevator','Basement','Attic','Garage','Rooftop','Balcony','Terrace','Courtyard','Garden','Park','Forest','Mountain','Beach','Lake','River','Farm','Barn','Road','Street','Bridge','Tunnel','Parking Lot','Warehouse','Factory','Workshop','Construction Site','Shop','Supermarket','Shopping Mall','Restaurant','Cafe','Bar','Hotel','School','University','Library','Museum','Theatre','Cinema','Church','Mosque','Gym','Swimming Pool','Sports Court','Hospital','Clinic','Laboratory','Pharmacy','Airport','Train Station','Furniture','Lighting','Electronics','Clothing','Accessories','Tools','Tableware','Actor','Model','Presenter','Voice Artist','Extra',
@@ -29,5 +30,5 @@
   const value=canonical(legacyOf(item));return value?[value]:[];
  }
  function record(item){return {...item,category:labels[item.type]||'',...(typeof item.city==='string'?{city:canonicalCity(item.city)||item.city}:{}),subcategories:fromItem(item),legacyCategory:legacyOf(item)}}
- globalThis.ProductiondeckTaxonomy=Object.freeze({labels,subcategories,subcategoryLabels,label,display,search,canonical,normalize,fold,cityGroups,cities,canonicalCity,isMain,legacyOf,fromItem,record});
+ globalThis.ProductiondeckTaxonomy=Object.freeze({labels,genders,subcategories,subcategoryLabels,label,display,search,canonical,normalize,fold,cityGroups,cities,canonicalCity,isMain,legacyOf,fromItem,record});
 })();

@@ -336,3 +336,14 @@ test('call sheet validation and membership checks reject invalid writes without 
  const f=fixture(),body=ProductiondeckCallSheet.fresh();for(const patch of [{dayNumber:2,totalDays:1},{date:'2026-02-30'},{generalCall:'24:00'},{locations:[{...body.locations[0],mapUrl:'http://example.test'}]}])assert.equal((await f.req('/api/call-sheets',{method:'POST',body:{...body,...patch}})).status,400);assert.equal(f.tables.items.length,0);
  assert.equal((await f.req('/api/call-sheets',{cookie:''})).status,401);assert.equal((await f.req('/api/call-sheets',{method:'POST',body,cookie:''})).status,401);assert.equal((await f.req('/api/call-sheets',{method:'POST',body,origin:'https://other.test'})).status,403);
 });
+
+test('casting gender is optional, validated and preserved for older clients, and never stored on other reference types',async()=>{
+ const f=fixture(),body={title:'Talent',type:'casting',casting:{gender:'female',playingAge:'25–35'}};
+ let response=await f.req('/api/items',{method:'POST',body});assert.equal(response.status,201);const {id}=await response.json();assert.equal(f.tables.items[0].data.casting.gender,'female');
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{title:'Renamed',type:'casting',casting:{playingAge:'30–40'}}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.casting.gender,'female');
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{...body,casting:{gender:'male'}}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.casting.gender,'male');
+ for(const gender of ['invalid',null,42,{},'__proto__'])assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...body,casting:{gender}}})).status,400);
+ response=await f.req('/api/items/'+id,{method:'PUT',body:{...body,casting:{gender:''}}});assert.equal(response.status,200);assert.equal(f.tables.items[0].data.casting.gender,'');
+ for(const type of ['location','prop']){response=await f.req('/api/items',{method:'POST',body:{title:type,type,casting:{gender:'female'}}});assert.equal(response.status,201);const saved=f.tables.items.at(-1).data;assert(!Object.hasOwn(saved,'casting'));assert(!Object.hasOwn(saved,'gender'))}
+ response=await f.req('/api/items',{method:'POST',body:{title:'Legacy talent',type:'casting'}});assert.equal(response.status,201);assert.equal(f.tables.items.at(-1).data.casting.gender,'');
+});
