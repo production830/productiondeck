@@ -15,7 +15,7 @@
     "SUPABASE_URL": "https://jqjbyekctjhvrfltidfc.supabase.co"
   },
   "build": {
-    "command": "node scripts/vendor-pdf.mjs"
+    "command": "node scripts/vendor-pdf.mjs && node scripts/vendor-vision.mjs"
   },
   "ratelimits": [
     {
@@ -31,6 +31,14 @@
       "namespace_id": "830102",
       "simple": {
         "limit": 30,
+        "period": 60
+      }
+    },
+    {
+      "name": "ACCOUNT_SETUP_LIMIT",
+      "namespace_id": "830103",
+      "simple": {
+        "limit": 5,
         "period": 60
       }
     }

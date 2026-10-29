@@ -6,6 +6,7 @@ function fixture(){
  const tables={members:[{id:admin,email:'admin@example.test',name:'Admin',admin:true},{id:crew,email:'crew@example.test',name:'Crew',admin:false}],items:[],images:[],boards:[]};
  const objects=new Map(),calls=[];let storageFailure=false,strictAuth=false;
  const authAccounts=new Map([[admin,{id:admin,email:'admin@example.test',password:'admin-password-long',confirmed:true}],[crew,{id:crew,email:'crew@example.test',password:'crew-password-long',confirmed:true}]]);
+ const setupTokens=new Map();
  const issuedTokens=new Map([['admin-token',admin],['crew-token',crew]]);
  const response=(data,status=200)=>new Response(data===null?null:JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  const upstream=async(raw,options={})=>{
@@ -26,25 +27,27 @@ function fixture(){
   }
   if(p==='/auth/v1/user'){
    const token=options.headers.Authorization;if(token==='Bearer expired')return response({},401);
-   if(m==='PUT')return response({id:admin});
+   if(m==='PUT'){const id=issuedTokens.get(token.replace('Bearer ',''))||admin;if(body.password)authAccounts.get(id).password=body.password;return response({id})}
    return response({id:issuedTokens.get(token.replace('Bearer ',''))||admin});
   }
+  if(p==='/auth/v1/admin/generate_link'){const account=[...authAccounts.values()].find(a=>a.email===body.email);if(!account)return response({},404);const hash=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');setupTokens.set(hash,account.id);return response({id:account.id,hashed_token:hash})}
+  if(p==='/auth/v1/verify'){const id=setupTokens.get(body.token_hash);if(!id)return response({error_code:'otp_expired'},403);setupTokens.delete(body.token_hash);const account=authAccounts.get(id),token='recovery-'+id;account.confirmed=true;issuedTokens.set(token,id);return response({user:{id,email:account.email},access_token:token,refresh_token:'recovery-refresh',expires_in:3600})}
   if(p==='/auth/v1/logout')return response(null,204);
   if(p==='/auth/v1/admin/users'&&m==='POST'){
    const id=crypto.randomUUID();authAccounts.set(id,{id,email:body.email,password:body.password,confirmed:body.email_confirm===true});return response({id});
   }
   if(p.startsWith('/auth/v1/admin/users/')&&m==='GET'){
-   const account=authAccounts.get(p.split('/').pop());return account?response({id:account.id,email:account.email,email_confirmed_at:account.confirmed?'2026-01-01T00:00:00Z':null}):response({},404);
+   const account=authAccounts.get(p.split('/').pop());return account?response({id:account.id,email:account.email,email_confirmed_at:account.confirmed?'2026-01-01T00:00:00Z':null,banned_until:account.banned_until}):response({},404);
   }
   if(p.startsWith('/auth/v1/admin/users/')&&m==='PUT'){
    const id=p.split('/').pop(),account=authAccounts.get(id);if(!account)return response({},404);
-   account.password=body.password;if(body.email_confirm===true)account.confirmed=true;return response({id});
+   if(body.password!==undefined)account.password=body.password;if(body.email_confirm===true)account.confirmed=true;return response({id});
   }
   if(p.startsWith('/auth/v1/admin/users/')&&m==='DELETE')return response({ok:true});
   if(p.startsWith('/rest/v1/pd_')){
    assert.equal(options.headers.apikey,'test-service-secret');
    const table=p.split('pd_')[1],rows=tables[table];assert.ok(rows,'Unknown table '+table);
-   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>{const field=key.startsWith('data->>')?row.data?.[key.slice(7)]:row[key];return value.startsWith('eq.')?String(field)===value.slice(3):value.startsWith('not.in.(')?!value.slice(8,-1).split(',').includes(String(field)):value.startsWith('neq.')?String(field)!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(field)):true}));
+   const filter=rows=>rows.filter(row=>[...u.searchParams].every(([key,value])=>{const field=key.startsWith('data->>')?row.data?.[key.slice(7)]:row[key];return value.startsWith('eq.')?(key==='data'?JSON.stringify(field):String(field))===value.slice(3):value.startsWith('not.in.(')?!value.slice(8,-1).split(',').includes(String(field)):value.startsWith('neq.')?String(field)!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(field)):true}));
    if(m==='GET'){const limit=Number(u.searchParams.get('limit')||1000),offset=Number(u.searchParams.get('offset')||0);return response(filter(rows).slice(offset,offset+limit))}
    if(m==='POST'){
     const old=body?.id&&rows.find(row=>row.id===body.id);if(old){if(options.headers.Prefer==='resolution=merge-duplicates'){Object.assign(old,body);return response(null,204)}return response({code:'23505'},409)}
@@ -65,7 +68,7 @@ function fixture(){
   throw Error('Unexpected upstream '+m+' '+raw);
  };
  const handle=createHandler(upstream);
- const env={SUPABASE_URL:'https://test-project.supabase.co',SUPABASE_ANON_KEY:'test-anon',SUPABASE_SERVICE_ROLE_KEY:'test-service-secret',CASTING_IP_LIMIT:{limit:async()=>({success:true})},CASTING_GLOBAL_LIMIT:{limit:async()=>({success:true})},ASSETS:{fetch:async()=>new Response('<html>library</html>')}};
+ const env={ACCOUNT_SETUP_LIMIT:{limit:async()=>({success:true})},SUPABASE_URL:'https://test-project.supabase.co',SUPABASE_ANON_KEY:'test-anon',SUPABASE_SERVICE_ROLE_KEY:'test-service-secret',CASTING_IP_LIMIT:{limit:async()=>({success:true})},CASTING_GLOBAL_LIMIT:{limit:async()=>({success:true})},ASSETS:{fetch:async()=>new Response('<html>library</html>')}};
  async function req(path,{method='GET',body,cookie='__Host-pd_access=admin-token',origin='https://library.example',headers={}}={}){
   return handle(new Request('https://library.example'+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(method!=='GET'?{Origin:origin}:{}),...headers},body:body===undefined?undefined:body instanceof Uint8Array||body instanceof FormData?body:JSON.stringify(body)}),env);
  }
@@ -398,4 +401,38 @@ test('failed uploads never enter Casting and incomplete private uploads can be r
 test('the pending queue is bounded and a recoverable upload failure cleans up every reserved object and row',async()=>{
  const f=fixture();for(let index=0;index<200;index++)f.tables.items.push({id:crypto.randomUUID(),data:{type:'casting_application',status:'pending'}});assert.equal((await(await f.req('/api/public/casting/info',{cookie:''})).json()).open,false);assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm()})).status,503);assert.equal(f.tables.images.length,0);
  const clean=fixture(),handler=createHandler(async(url,options)=>{if(url.includes('/storage/v1/object/')&&options.method==='POST')return new Response('{}',{status:503});return clean.upstream(url,options)});const form=applicationForm();const response=await handler(new Request('https://library.example/api/public/casting/apply',{method:'POST',headers:{Origin:'https://library.example'},body:form}),clean.env);assert.equal(response.status,503);assert.equal(clean.tables.items.length,0);assert.equal(clean.tables.images.length,0);assert.equal(clean.objects.size,0);
+});
+
+
+test('private setup links let a teammate choose a verified password and sign in once without an email service',async()=>{
+ const f=fixture();f.enableStrictAuth();f.authAccounts.get(crew).confirmed=false;
+ let r=await f.req('/api/users/'+crew+'/status');assert.equal((await r.json()).state,'unconfirmed');
+ r=await f.req('/api/users/'+crew+'/setup-link',{method:'POST',body:{}});assert.equal(r.status,200);const link=await r.json(),hash=new URL(link.url).hash.slice(7);assert.equal(new URL(link.url).pathname,'/account-setup.html');assert(!new URL(link.url).search);assert.equal(link.email,'crew@example.test');assert.equal(r.headers.get('set-cookie'),null);
+ const setup={tokenHash:hash,password:'new-verified-teammate-password'};
+ r=await f.req('/api/account-setup',{method:'POST',cookie:'',body:setup});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/HttpOnly/);assert.equal(f.authAccounts.get(crew).password,setup.password);assert.equal(f.authAccounts.get(admin).password,'admin-password-long');assert.equal((await r.json()).ok,true);
+ r=await f.req('/api/account-setup',{method:'POST',cookie:'',body:setup});assert.equal(r.status,400);assert.equal((await r.json()).code,'setup_link_expired');assert.equal(r.headers.get('set-cookie'),null);
+ r=await f.req('/api/login',{method:'POST',cookie:'',body:{email:'crew@example.test',password:setup.password}});assert.equal(r.status,200);
+ assert.equal((await(await f.req('/api/users/'+crew+'/status')).json()).state,'ready');
+});
+test('account diagnostics distinguish email mismatch, disabled and missing Auth accounts without changing passwords',async()=>{
+ const f=fixture();f.authAccounts.get(crew).email='other@example.test';assert.equal((await(await f.req('/api/users/'+crew+'/status')).json()).state,'email_mismatch');assert.equal((await f.req('/api/users/'+crew+'/setup-link',{method:'POST',body:{}})).status,409);
+ f.authAccounts.get(crew).email='crew@example.test';f.authAccounts.get(crew).banned_until='2099-01-01T00:00:00Z';assert.equal((await(await f.req('/api/users/'+crew+'/status')).json()).state,'disabled');assert.equal((await f.req('/api/users/'+crew+'/setup-link',{method:'POST',body:{}})).status,409);
+ f.authAccounts.delete(crew);assert.equal((await(await f.req('/api/users/'+crew+'/status')).json()).state,'missing_login');assert(!f.calls.some(call=>call.path==='/auth/v1/admin/generate_link'));
+});
+test('setup tools require administrator rights, valid private token, membership, same origin and rate limiting',async()=>{
+ const f=fixture();f.enableStrictAuth();const endpoint='/api/users/'+crew+'/setup-link';
+ assert.equal((await f.req(endpoint,{method:'POST',body:{},cookie:''})).status,401);assert.equal((await f.req(endpoint,{method:'POST',body:{},cookie:'__Host-pd_access=crew-token'})).status,403);assert.equal((await f.req('/api/users/'+admin+'/setup-link',{method:'POST',body:{}})).status,400);
+ const link=await(await f.req(endpoint,{method:'POST',body:{}})).json(),body={tokenHash:new URL(link.url).hash.slice(7),password:'new-verified-password-long'};
+ assert.equal((await f.req('/api/account-setup',{method:'POST',cookie:'',body,origin:'https://evil.example'})).status,403);
+ assert.equal((await f.req('/api/account-setup',{method:'POST',cookie:'',body:{...body,password:'weak'}})).status,400);
+ f.env.ACCOUNT_SETUP_LIMIT={limit:async()=>({success:false})};assert.equal((await f.req('/api/account-setup',{method:'POST',cookie:'',body})).status,429);
+ f.env.ACCOUNT_SETUP_LIMIT={limit:async()=>({success:true})};f.tables.members=f.tables.members.filter(row=>row.id!==crew);assert.equal((await f.req('/api/account-setup',{method:'POST',cookie:'',body})).status,403);assert.equal(f.authAccounts.get(crew).password,'crew-password-long');
+});
+test('automatic tagging adds tags without replacing manual tags, references, photos or internal document data',async()=>{
+ const f=fixture(),created=await(await f.req('/api/items',{method:'POST',body:{title:'Green bar',type:'location',tags:['Hand picked'],notes:'Keep private notes'}})).json();
+ let r=await f.req('/api/items/'+created.id+'/auto-tags',{method:'POST',body:{version:'clip-laion-v1',tags:['E gjelbër','Bar']}});assert.equal(r.status,200);assert.deepEqual((await r.json()).tags,['Hand picked','E gjelbër','Bar']);const row=f.tables.items.find(row=>row.id===created.id);assert.equal(row.data.notes,'Keep private notes');assert.equal(row.data.autoTagging.version,'clip-laion-v1');
+ assert.equal((await f.req('/api/items/'+created.id+'/auto-tags',{method:'POST',cookie:'',body:{version:'clip-laion-v1',tags:['Bad']}})).status,401);
+ const talent=await(await f.req('/api/items',{method:'POST',body:{title:'Actor',type:'casting'}})).json();assert.equal((await f.req('/api/items/'+talent.id+'/auto-tags',{method:'POST',body:{version:'clip-laion-v1',tags:['Bar']}})).status,400);
+ assert.equal((await f.req('/api/items/'+created.id+'/auto-tags',{method:'POST',body:{version:'wrong-model',tags:['Bar']}})).status,400);
+ assert.equal((await f.req('/api/items/'+created.id,{method:'PUT',body:{...row.data,title:'Renamed bar'}})).status,200);assert.equal(row.data.autoTagging.version,'clip-laion-v1');
 });

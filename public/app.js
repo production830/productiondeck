@@ -22,7 +22,7 @@ async function api(path,options={}){
  return b;
 }
 const post=(path,b,method='POST')=>api(path,{method,body:JSON.stringify(b)});
-function showLogin(){state.user=null;const home=homeReady&&(!location.hash||location.hash==='#home');$('#home').hidden=!home;$('#login').hidden=home;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
+function showLogin(){state.user=null;globalThis.ProductiondeckVisionUI?.reset();const home=homeReady&&(!location.hash||location.hash==='#home');$('#home').hidden=!home;$('#login').hidden=home;$('#app').hidden=true;state.items=[];state.boards=[];$('#grid').replaceChildren();$('#detail-content').replaceChildren()}
 function error(e){$('#notice').textContent=e.message}
 async function load(){[state.items,state.boards]=await Promise.all([api('items'),api('boards')]);state.items=state.items.map(taxonomy.record);render();if(state.user){ProductiondeckScheduleUI.route();ProductiondeckCallSheetUI.route();ProductiondeckCrewUI.route();ProductiondeckCastingApplicationsUI.route()}}
 const kindName=taxonomy.labels;
@@ -70,7 +70,7 @@ function render(){
  const filters=Object.fromEntries(['type','city','setting','availability'].map(k=>[k,$('#filter-'+k).value]));if(casting)filters.setting='';
  const subcategory=$('#filter-subcategory').value;
  const language=casting?$('#filter-language').value:'',skill=casting?$('#filter-skill').value:'',history=casting?$('#filter-history').value:'',gender=casting?$('#filter-gender').value:'';
- let items=scope.filter(x=>(!state.tag||x.tags.includes(state.tag))&&(!subcategory||x.subcategories.includes(subcategory))&&Object.entries(filters).every(([k,v])=>!v||x[k]===v)&&(!language||x.casting?.languages?.includes(language))&&(!skill||x.casting?.skills?.includes(skill))&&(!history||(x.casting?.workedBefore||'unknown')===history)&&(!gender||(x.casting?.gender||'unknown')===gender)&&query.every(q=>[x.title,x.category,x.legacyCategory,...x.subcategories,...subcategoryText(x.subcategories),x.city,x.notes,x.address,x.contact,x.casting?.playingAge,x.casting?.gender,taxonomy.genders[x.casting?.gender],...(x.casting?.languages||[]),...(x.casting?.skills||[]),...x.tags].map(taxonomy.fold).join(' ').includes(q)));
+ let items=scope.filter(x=>(!state.tag||x.tags.includes(state.tag))&&(!subcategory||x.subcategories.includes(subcategory))&&Object.entries(filters).every(([k,v])=>!v||x[k]===v)&&(!language||x.casting?.languages?.includes(language))&&(!skill||x.casting?.skills?.includes(skill))&&(!history||(x.casting?.workedBefore||'unknown')===history)&&(!gender||(x.casting?.gender||'unknown')===gender)&&query.every(q=>[x.title,x.category,x.legacyCategory,...x.subcategories,...subcategoryText(x.subcategories),x.city,x.notes,x.address,x.contact,x.casting?.playingAge,x.casting?.gender,taxonomy.genders[x.casting?.gender],...(x.casting?.languages||[]),...(x.casting?.skills||[]),...x.tags,...x.tags.map(tag=>ProductiondeckVisionCore.colorAliases[tag]||'')].map(taxonomy.fold).join(' ').includes(q)));
  const sort=$('#sort').value;if(sort==='az')items.sort((a,b)=>a.title.localeCompare(b.title));else if(sort==='old')items.reverse();
  $('#result-count').textContent=items.length;$('#result-label').textContent=casting?(items.length===1?'talent profile':'talent profiles'):(items.length===1?'reference':'references');$('#delete-board').hidden=!board;$('#edit-board').hidden=!board;$('#export-board').hidden=!board;$('#export-board').disabled=!board||!board.items.some(id=>state.items.some(item=>item.id===id));
  const active=Object.values(filters).filter(Boolean).length+[state.tag,subcategory,language,skill,history,gender].filter(Boolean).length;$('#filter-count').textContent=active?'('+active+')':'';
@@ -110,7 +110,7 @@ function openEditor(item){
   for(const [k,v] of Object.entries(item)){if(form.elements[k]&&k!=='images')form.elements[k].value=k==='tags'?v.join(', '):v}
   const c=item.casting||{};for(const [k,v] of Object.entries({cast_gender:c.gender||'',cast_age:c.playingAge,cast_height:c.height,cast_languages:(c.languages||[]).join(', '),cast_skills:(c.skills||[]).join(', '),cast_history:c.workedBefore||'unknown',cast_reel:c.showreel}))form.elements[k].value=v||'';
  }else if(['location','prop','casting'].includes(state.view)){form.elements.type.value=state.view}
- renderCityPicker(item);syncEditorType();renderSubcategories();$('#legacy-category-note').hidden=!item?.legacyCategory;$('#legacy-category-note').textContent=item?.legacyCategory?'Kategoria e mëparshme e ruajtur: '+item.legacyCategory:'';renderCoverPicker();$('#editor-title').textContent=item?(item.type==='casting'?'Edit talent':'Edit reference'):(form.elements.type.value==='casting'?'Add talent':'Add a reference');$('#editor').showModal();
+ renderCityPicker(item);syncEditorType();renderSubcategories();$('#legacy-category-note').hidden=!item?.legacyCategory;$('#legacy-category-note').textContent=item?.legacyCategory?'Kategoria e mëparshme e ruajtur: '+item.legacyCategory:'';renderCoverPicker();$('#editor-title').textContent=item?(item.type==='casting'?'Edit talent':'Edit reference'):(form.elements.type.value==='casting'?'Add talent':'Add a reference');ProductiondeckVisionUI.editorOpened();$('#editor').showModal();
 }
 let activeDetail=null;
 const photoArrow=direction=>`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${direction==='previous'?'m14 6-6 6 6 6':'m10 6 6 6-6 6'}"/></svg>`;
@@ -153,18 +153,18 @@ function openDetail(id){
 
 }
 async function team(){
- const users=await api('users');$('#members').innerHTML=users.map(u=>`<div class="member"><div>${esc(u.name)}${u.admin?' · Admin':''}<small>${esc(u.email)}</small></div>${u.id!==state.user.id?`<div class="member-actions"><button class="text-button" data-reset-user="${u.id}" data-reset-name="${esc(u.name)}">Reset password</button><button class="text-button" data-remove-user="${u.id}">Remove access</button></div>`:''}</div>`).join('');
+ const users=await api('users');$('#members').innerHTML=users.map(u=>`<div class="member"><div>${esc(u.name)}${u.admin?' · Admin':''}<small>${esc(u.email)}</small></div>${u.id!==state.user.id?`<div class="member-actions"><button class="text-button" data-account-status="${u.id}">Check account</button><button class="text-button" data-setup-link="${u.id}">Create setup link</button><button class="text-button" data-reset-user="${u.id}" data-reset-name="${esc(u.name)}">Reset password</button><button class="text-button" data-remove-user="${u.id}">Remove access</button></div>`:''}</div>`).join('');
  if(!$('#team-modal').open)$('#team-modal').showModal();
 }
 $('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#login-error').textContent='';try{await post('login',Object.fromEntries(new FormData(e.target)));e.target.reset();await boot({afterLogin:true})}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false}};
 $('#signout').onclick=async()=>{try{await post('logout',{});location.hash='home';showLogin()}catch(e){error(e)}};
-$('#add').onclick=()=>openEditor();$('#item-form').elements.type.onchange=syncEditorType;$('#search').oninput=render;$('#sort').onchange=render;for(const f of $$('.filters select'))f.onchange=render;
+$('#add').onclick=()=>openEditor();$('#item-form').elements.type.onchange=()=>{syncEditorType();ProductiondeckVisionUI.editorOpened()};$('#search').oninput=render;$('#sort').onchange=render;for(const f of $$('.filters select'))f.onchange=render;
 $('#filter-toggle').onclick=()=>{$('#filters').hidden=!$('#filters').hidden;$('#filter-toggle').setAttribute('aria-expanded',String(!$('#filters').hidden))};
 $('#reset').onclick=()=>{$$('.filters select').forEach(s=>s.value='');state.tag='';$('#search').value='';render()};
 let deckSelection=new Set();
 function renderDeckSelection(){
  const query=taxonomy.fold($('#deck-search').value);
- const items=state.items.filter(x=>[x.title,x.type,x.category,x.legacyCategory,...x.subcategories,...subcategoryText(x.subcategories),x.city,...x.tags].map(taxonomy.fold).join(' ').includes(query));
+ const items=state.items.filter(x=>[x.title,x.type,x.category,x.legacyCategory,...x.subcategories,...subcategoryText(x.subcategories),x.city,...x.tags,...x.tags.map(tag=>ProductiondeckVisionCore.colorAliases[tag]||'')].map(taxonomy.fold).join(' ').includes(query));
  $('#deck-selection').innerHTML=items.map(item=>`<label class="deck-choice"><input type="checkbox" data-deck-choice="${item.id}" ${deckSelection.has(item.id)?'checked':''}>${item.images.length?`<img src="/media/${galleryPhotos(item)[0]}" alt="" loading="lazy">`:'<span class="deck-choice-placeholder">◇</span>'}<span><strong>${esc(item.title)}</strong><small>${esc(kindName[item.type])}${item.subcategories.length?' · '+esc(subcategoryText(item.subcategories.slice(0,2)).join(', ')):''}</small></span></label>`).join('')||'<p class="muted">No matching references. Add references to your library to include them here.</p>';
  $('#deck-selection-count').textContent=deckSelection.size+' selected · up to 500 references';
 }
@@ -205,11 +205,14 @@ async function preparePhoto(file){
   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));if(!blob)throw Error('Could not prepare this photo');return blob;
  }finally{bitmap.close()}
 }
+let itemSaving=false;
+$('#editor').addEventListener('cancel',event=>{if(itemSaving)event.preventDefault()});
+$('#editor').addEventListener('click',event=>{if(itemSaving&&event.target.closest('.close')){event.preventDefault();event.stopPropagation()}},true);
 $('#item-form').onsubmit=async e=>{
  e.preventDefault();const form=e.target,fd=new FormData(form),files=[...form.elements.photos.files],existing=state.items.find(x=>x.id===fd.get('id')),coverChoice=fd.get('cover_choice')||'';$('#save-error').textContent='';
  if(files.length+(existing?.images.length||0)>maxPhotosFor(fd.get('type'))){$('#save-error').textContent='Use up to '+maxPhotosFor(fd.get('type'))+' photos for this reference.';return}
  if(files.some(f=>f.size>8*1024*1024)){ $('#save-error').textContent='Each photo must be 8 MB or smaller.';return}
- $('#save').disabled=true;let savedId='';
+ if(itemSaving)return;itemSaving=true;const editorLocks=[...form.elements].map(control=>[control,control.disabled]);for(const [control] of editorLocks)control.disabled=true;$('#save').disabled=true;let savedId='';
  try{
   const data=Object.fromEntries(fd);delete data.photos;delete data.cover_choice;data.subcategories=[...selectedSubcategories];data.tags=castList(data.tags);
   if(coverChoice.startsWith('saved:'))data.coverImage=coverChoice.slice(6);
@@ -221,9 +224,10 @@ $('#item-form').onsubmit=async e=>{
   for(let i=0;i<files.length;i++){$('#save').textContent=`Uploading photo ${i+1} of ${files.length}…`;const photo=await api('items/'+id+'/images',{method:'POST',body:await preparePhoto(files[i])});if(coverChoice==='new:'+i)newCover=photo.id}
   if(newCover)await post('items/'+id,{...data,coverImage:newCover},'PUT');
   if(!existing&&state.boards.some(b=>b.id===state.view)){const b=state.boards.find(b=>b.id===state.view);await post('boards/'+b.id,{items:[...b.items,id]},'PUT')}
-  $('#editor').close();await load();
+  let taggingError='';try{await ProductiondeckVisionUI.onSave({...data,id},files)}catch(error){taggingError=error.message}
+  $('#editor').close();await load();if(taggingError)$('#notice').textContent='Reference and photos saved. Automatic tagging could not finish: '+taggingError+' Use Auto-tag library to retry.';
  }catch(err){if(savedId){form.elements.photos.value='';try{await load()}catch{}renderCoverPicker();$('#save-error').textContent='Reference saved, but a later step failed: '+err.message+' Re-select any missing photos to retry.'}else $('#save-error').textContent=err.message}
- finally{$('#save').disabled=false;$('#save').textContent='Save reference ↗'}
+ finally{for(const [control,disabled] of editorLocks)control.disabled=disabled;itemSaving=false;$('#save').disabled=false;$('#save').textContent='Save reference ↗'}
 };
 let pdfController=null;
 $('#export-board').onclick=()=>{
@@ -302,3 +306,15 @@ document.addEventListener('keydown',e=>{
  e.preventDefault();setDetailPhoto(activeDetail.index+(e.key==='ArrowRight'?1:-1));
 });
 $('#detail').addEventListener('close',()=>{activeDetail=null});
+
+// Live account checks and privately shared one-use setup links.
+document.addEventListener('click',async event=>{
+ const button=event.target.closest('[data-account-status],[data-setup-link]');if(!button)return;const id=button.dataset.accountStatus||button.dataset.setupLink;button.disabled=true;$('#team-error').textContent='Checking account…';
+ try{if(button.dataset.accountStatus){const result=await api('users/'+id+'/status');$('#team-error').textContent=result.message+(result.loginEmail?' Login email: '+result.loginEmail:'')}
+ else{const result=await post('users/'+id+'/setup-link',{});$('#account-link-email').textContent=result.email;$('#account-link-value').value=result.url;$('#account-link-status').textContent='';$('#account-link-modal').showModal();$('#team-error').textContent='Setup link created. Share it privately with this teammate.'}}
+ catch(problem){$('#team-error').textContent=problem.message}finally{button.disabled=false}
+});
+$('#account-link-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#account-link-value').value);$('#account-link-status').textContent='Copied. Share only with the named teammate.'}catch{$('#account-link-value').select();$('#account-link-status').textContent='Select and copy the private link above.'}};
+$('#account-link-modal').addEventListener('close',()=>{$('#account-link-value').value=''});
+
+ProductiondeckVisionUI.init({api,post,state,load});

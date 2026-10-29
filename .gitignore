@@ -10,3 +10,9 @@ data/
 /public/vendor/pdf/*.js
 /public/vendor/pdf/*.ttf
 /public/vendor/pdf/*.tmp
+
+/public/vendor/vision/v1/*.js
+/public/vendor/vision/v1/*.mjs
+/public/vendor/vision/v1/*.wasm
+/public/vendor/vision/v1/*.bin
+/public/vendor/vision/v1/manifest.json

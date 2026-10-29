@@ -1,0 +1,17 @@
+Productiondeck local photo recognition — clip-laion-v1
+
+Recognition runs on the user's computer; private photos are not sent to a recognition service.
+Model predictions are approximate and remain editable. Colours are measured from photo pixels.
+
+Quantized OpenCLIP image and text models and tokenizer resources:
+Source: https://github.com/slavabarkov/tidy/tree/eb4aed45656909b72992c51f3f11ac663759b2e7
+Original project: TIDY, copyright 2023 Viacheslav Barkov.
+The source project distributes these resources under GNU GPL v3; the full licence accompanies these assets as MODEL-LICENSE.txt.
+Model source: OpenCLIP, https://github.com/mlfoundations/open_clip, pretrained on LAION-2B as described by TIDY.
+The pinned image-model bytes are redistributed unchanged, split into hosting-sized parts. The included tag vectors are produced with the matching text model. Preparation source is included in scripts/prepare-vision-labels.py; the original model, tokenizer and resources remain available at the source above.
+No Android application source is included in Productiondeck.
+
+ONNX Runtime Web 1.20.1:
+https://github.com/microsoft/onnxruntime
+Copyright (c) Microsoft Corporation. All rights reserved.
+MIT License — see RUNTIME-LICENSE.txt alongside this notice.

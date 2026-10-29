@@ -1,4 +1,6 @@
 import './public/taxonomy.js';
+import {completeAccountSetup,accountTools} from './account-setup.js';
+import {saveAutoTags} from './auto-tags.js';
 import {publicCasting,reviewCasting} from './casting-intake.js';
 import './public/schedule-model.js';
 import './public/call-sheet-model.js';
@@ -21,7 +23,7 @@ const security={
  'X-Content-Type-Options':'nosniff',
  'Referrer-Policy':'same-origin',
  'X-Frame-Options':'DENY',
- 'Content-Security-Policy':"default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+ 'Content-Security-Policy':"default-src 'self'; img-src 'self' blob:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 };
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{...security,'Content-Type':'application/json'}})}
 function itemData(b,previous={}){
@@ -92,7 +94,9 @@ export function createHandler(fetcher=fetch){
      if(response.status===429)throw fail(429,'Too many sign-in attempts or requests. Please wait a few minutes and try again.','rate_limited');
      if(response.status>=500)throw fail(503,'The sign-in or data service is temporarily unavailable. Please try again.','service_unavailable');
      if(auth){
+      if(path.startsWith('/auth/v1/admin/users/')&&response.status===404)throw fail(404,'Supabase login account not found.','account_not_found');
       if(/^invalid api key$/i.test(value?.message||'')||code==='no_authorization'||code==='bad_jwt'&&path.includes('/token'))throw fail(503,'The Supabase sign-in key is invalid. Check SUPABASE_ANON_KEY in Cloudflare.','auth_key_invalid');
+      if(path==='/auth/v1/verify'&&['otp_expired','otp_disabled','validation_failed'].includes(code))throw fail(400,'This setup link has expired or was already used.','setup_link_expired');
       if(code==='email_not_confirmed')throw fail(403,'This account needs email confirmation. Ask your administrator to use Reset password in Manage team.','email_not_confirmed');
       if(['email_provider_disabled','provider_disabled'].includes(code))throw fail(503,'Email/password sign-in is disabled in Supabase. Your administrator needs to enable the Email provider; public signup can remain off.','email_provider_disabled');
       if(code==='user_banned')throw fail(403,'This account is disabled. Ask your administrator to check its Supabase Auth status.','account_disabled');
@@ -112,6 +116,7 @@ export function createHandler(fetcher=fetch){
    const rest=(table,query='',options={})=>upstream('/rest/v1/pd_'+table+(query?'?'+query:''),options);
    async function membership(id){const rows=await rest('members','id=eq.'+checkId(id)+'&select=id,email,name,admin');return rows[0]}
    if(p.startsWith('/api/public/casting/'))return finish(json(await publicCasting({request,env,p,rest,upstream,bytes})));
+   if(p==='/api/account-setup'){const session=await completeAccountSetup({request,env,body,upstream,membership});setSession(session);return finish(json({ok:true}))}
    const authUser=access=>upstream('/auth/v1/user',{access,anon:true});
    if(p==='/api/login'&&request.method==='POST'){
     const b=await body(request);if(!email(b.email)||typeof b.password!=='string'||b.password.length>1024)throw fail(400,'Enter an email and password');
@@ -132,6 +137,8 @@ export function createHandler(fetcher=fetch){
    if(!identity)throw fail(401,'Please sign in.','session_expired');
    const user=await membership(identity.id);if(!user){clear();throw fail(401,'Your access to this library has been removed. Ask your administrator.','access_removed')}
    if(p==='/api/me'&&request.method==='GET')return finish(json(user));
+   const tagResult=await saveAutoTags({request,p,body,checkId,rest,isDocument});if(tagResult)return finish(json(tagResult));
+   const accountResult=await accountTools({request,p,user,checkId,membership,upstream});if(accountResult)return finish(json(accountResult));
    if(p==='/api/casting-applications'||p.startsWith('/api/casting-applications/'))return finish(json(await reviewCasting({request,p,rest,upstream,body,user,itemData}))); 
    if(p==='/api/password'&&request.method==='POST'){
     const b=await body(request);if(typeof b.current!=='string'||b.current.length>1024||typeof b.password!=='string'||b.password.length<12||b.password.length>1024)throw fail(400,'Use a password between 12 and 1024 characters');
@@ -211,6 +218,7 @@ export function createHandler(fetcher=fetch){
      data.legacyCategory=clean(taxonomy.legacyOf(rows[0].data)||taxonomy.legacyOf(b),80);
      if(!Object.hasOwn(b,'coverImage'))data.coverImage=rows[0].data.coverImage||'';
      if(rows[0].data.castingApplication)data.castingApplication=rows[0].data.castingApplication;
+     if(rows[0].data.autoTagging)data.autoTagging=rows[0].data.autoTagging;
      if(data.coverImage&&!(await rest('images','id=eq.'+data.coverImage+'&item_id=eq.'+id+'&select=id')).length)throw fail(400,'Choose a thumbnail from this reference’s photos');
      await rest('items','id=eq.'+id,{method:'PATCH',data:{data}});return finish(json({ok:true}));
     }
