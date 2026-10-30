@@ -385,7 +385,7 @@ test('public applications stay private and pending with their photos until one a
  assert.equal((await f.req('/api/items/'+stored.id,{method:'PUT',body:{title:'Renamed approved talent',type:'casting',casting:{gender:'male'}}})).status,200);assert(f.tables.items[0].data.castingApplication.consent);
 });
 test('applications can be paused and public submissions validate consent, image bounds and rate limits',async()=>{
- const f=fixture(),valid=applicationInput();for(const input of [{...valid,consent:false},{...valid,city:'New typo'},{...valid,email:'invalid'},{...valid,interests:['Office']}])assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(input)})).status,400);
+ const f=fixture(),valid=applicationInput();for(const input of [{...valid,consent:false},{...valid,city:'New typo'},{...valid,email:'invalid'},{...valid,previousCommercial:'yes',previousCommercialProjects:'',previousCommercialRole:''}])assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(input)})).status,400);
  for(const photos of [[],Array(5).fill(applicationPhoto()),[new Uint8Array([255,216,255,217])],[new Uint8Array(701*1024)]])assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(valid,photos)})).status,400);assert.equal(f.tables.items.length,0);
  assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',origin:'https://evil.test',body:applicationForm(valid)})).status,403);
  f.env.CASTING_IP_LIMIT.limit=async()=>({success:false});assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(valid)})).status,429);f.env.CASTING_IP_LIMIT.limit=async()=>({success:true});f.env.CASTING_GLOBAL_LIMIT.limit=async()=>({success:false});assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(valid)})).status,429);f.env.CASTING_GLOBAL_LIMIT.limit=async()=>({success:true});
@@ -438,4 +438,13 @@ test('automatic tagging adds tags without replacing manual tags, references, pho
  const talent=await(await f.req('/api/items',{method:'POST',body:{title:'Actor',type:'casting'}})).json();assert.equal((await f.req('/api/items/'+talent.id+'/auto-tags',{method:'POST',body:{version:'clip-laion-v1',tags:['Bar']}})).status,400);
  assert.equal((await f.req('/api/items/'+created.id+'/auto-tags',{method:'POST',body:{version:'wrong-model',tags:['Bar']}})).status,400);
  assert.equal((await f.req('/api/items/'+created.id,{method:'PUT',body:{...row.data,title:'Renamed bar'}})).status,200);assert.equal(row.data.autoTagging.version,'clip-laion-v1');
+});
+
+test('commercial history stays private until approval and is retained in Casting notes while team roles stay optional',async()=>{
+ const f=fixture(),input={...applicationInput(),previousCommercial:'yes',previousCommercialProjects:'Client A campaign',previousCommercialRole:'Background performer',interests:['Presenter']};
+ assert.equal((await f.req('/api/public/casting/apply',{method:'POST',cookie:'',body:applicationForm(input)})).status,200);
+ let application=(await(await f.req('/api/casting-applications')).json())[0];assert.deepEqual(application.candidate.interests,[]);assert.equal(application.candidate.previousCommercialRole,'Background performer');assert.equal((await(await f.req('/api/items')).json()).length,0);
+ const candidate={...application.candidate,previousCommercialProjects:'Client A and Client B campaigns'};assert.equal((await f.req('/api/casting-applications/'+application.id,{method:'PUT',body:{candidate,revision:application.revision}})).status,200);
+ application=(await(await f.req('/api/casting-applications')).json())[0];assert.equal((await f.req('/api/casting-applications/'+application.id+'/approve',{method:'POST',body:{candidate:application.candidate,revision:application.revision}})).status,200);
+ const profile=(await(await f.req('/api/items')).json())[0];assert(profile.notes.includes('Client A and Client B campaigns'));assert(profile.notes.includes('Background performer'));assert.equal(profile.casting.workedBefore,'unknown');assert.deepEqual(profile.subcategories,[]);
 });

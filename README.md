@@ -239,3 +239,14 @@ The workspace opens on **Locations**. The combined All references navigation/vie
 Casting no longer displays or collects languages: the editor, filters, profile cards/details, search, public application form, application review and Project Deck PDF metadata omit that field. Existing stored language values are retained for compatibility and are preserved when an updated editor saves other casting details. Historical application values are preserved during review. New applications can be submitted without languages. Skills, gender, photos, contacts and all other casting fields remain available.
 
 The Cloudflare build runs the syntax checks and automated tests before downloading dependencies or deploying. This includes a regression check that editing a historical casting profile without a language field preserves its other details and historical values. No database migration is needed.
+
+
+## Casting application wording and previous commercial work
+
+The public form headline is **Bëhu pjesë e reklamave**. Applicants no longer choose Actor/Model/Presenter/Voice Artist/Extra or any future role. The public validator ignores applicant-supplied role choices; the existing private review controls remain available for the team to assign a classification. An unclassified application can still be saved or approved, and historical team classifications are retained during review.
+
+Applicants answer whether they have appeared in commercials before. Selecting **Po** reveals required text fields for the commercials/companies and their previous roles; selecting **Jo** hides and clears those fields from the submitted record. The separate general experience/notes field remains available. Legacy applications without this answer show **Nuk është shënuar** in review. Staff can review and correct the answers privately. Approval includes the commercial-history answer and details in the Casting profile's production notes, so the information remains searchable and available in PDFs that include notes. Previous work for another client does not automatically set “worked with Tatamata” to Yes.
+
+Validation and real Worker lifecycle tests cover public role exclusion, optional team assignment, conditional history requirements, no stale details after selecting No, private review/editing and preservation of history on approval. No database migration is required.
+
+The update passed 73 automated tests, syntax checks, a Cloudflare dry-run build and desktop/mobile browser checks through the real Worker handler with simulated applicants. Browser checks cover Yes/No conditional fields, public role removal, private editing, team classification, approval without classification and history preserved in Casting notes. No test submissions were sent to the live database.

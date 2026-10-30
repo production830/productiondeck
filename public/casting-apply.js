@@ -4,7 +4,8 @@
  const esc=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
  const list=value=>value.split(',').map(item=>item.trim()).filter(Boolean);
  const form=$('#apply-form');form.elements.city.innerHTML='<option value="">Zgjidhni qytetin</option>'+ProductiondeckTaxonomy.cityGroups.map(group=>`<optgroup label="${esc(group.country)}">${group.cities.map(city=>`<option>${esc(city)}</option>`).join('')}</optgroup>`).join('');
- $('#apply-interests').innerHTML=Object.entries(model.interests).map(([value,label])=>`<label><input type="checkbox" name="interest" value="${value}" ${value==='Actor'?'checked':''}>${label}</label>`).join('');
+ function syncCommercial(){const yes=form.elements.previousCommercial.value==='yes';$('#apply-commercial-details').hidden=!yes;for(const name of ['previousCommercialProjects','previousCommercialRole']){form.elements[name].required=yes;form.elements[name].disabled=!yes}}
+ form.elements.previousCommercial.onchange=syncCommercial;syncCommercial();
  form.elements.photos.onchange=()=>{for(const url of previews)URL.revokeObjectURL(url);previews=[];$('#apply-photo-preview').replaceChildren();$('#apply-error').textContent='';const files=[...form.elements.photos.files];if(files.length>4){$('#apply-error').textContent='Zgjidhni deri në 4 fotografi.';return}for(const file of files){const url=URL.createObjectURL(file);previews.push(url);const image=document.createElement('img');image.src=url;image.alt='Fotografi e zgjedhur';$('#apply-photo-preview').append(image)}};
  async function photo(file){
   if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>8*1024*1024)throw Error('Përdorni fotografi JPEG, PNG ose WebP, deri në 8 MB secila.');
@@ -12,12 +13,12 @@
  }
  form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;$('#apply-error').textContent='';const fields=Object.fromEntries(new FormData(form)),files=[...form.elements.photos.files];let data;
-  try{data=model.validate({...fields,skills:list(fields.skills),interests:[...form.querySelectorAll('[name=interest]:checked')].map(input=>input.value),consent:form.elements.consent.checked});if(files.length<1||files.length>4)throw Error('Zgjidhni nga 1 deri në 4 fotografi.')}catch(error){$('#apply-error').textContent=error.message;return}
+  try{data=model.validate({...fields,skills:list(fields.skills),consent:form.elements.consent.checked});if(files.length<1||files.length>4)throw Error('Zgjidhni nga 1 deri në 4 fotografi.')}catch(error){$('#apply-error').textContent=error.message;return}
   busy=true;$('#apply-fields').disabled=true;$('#apply-submit').disabled=true;
   try{
    const body=new FormData();body.set('details',JSON.stringify({...data,consent:true,consentVersion:model.consentVersion,submissionKey:key}));body.set('website',fields.website||'');for(const [index,file] of files.entries()){$('#apply-status').textContent='Duke përgatitur fotografinë '+(index+1)+' nga '+files.length+'…';body.append('photos',await photo(file),'photo-'+(index+1)+'.jpg')}
    $('#apply-status').textContent='Duke dërguar aplikimin…';let response;try{response=await fetch('/api/public/casting/apply',{method:'POST',body})}catch{throw Error('Lidhja u ndërpre. Të dhënat janë ende në formular; provojeni përsëri.')}
-   let result;try{result=await response.json()}catch{throw Error('Dërgimi nuk mund të konfirmohej. Provojeni përsëri.')}if(!response.ok)throw Error(result.error||'Aplikimi nuk mund të dërgohej.');form.hidden=true;$('#apply-success').hidden=false;$('#apply-success').focus();for(const url of previews)URL.revokeObjectURL(url);previews=[];form.reset();key=crypto.randomUUID();
+   let result;try{result=await response.json()}catch{throw Error('Dërgimi nuk mund të konfirmohej. Provojeni përsëri.')}if(!response.ok)throw Error(result.error||'Aplikimi nuk mund të dërgohej.');form.hidden=true;$('#apply-success').hidden=false;$('#apply-success').focus();for(const url of previews)URL.revokeObjectURL(url);previews=[];form.reset();syncCommercial();key=crypto.randomUUID();
   }catch(error){$('#apply-error').textContent=error.message}finally{busy=false;$('#apply-fields').disabled=false;$('#apply-submit').disabled=false;$('#apply-status').textContent=''}
  };
  fetch('/api/public/casting/info').then(async response=>{if(!response.ok)throw Error();const info=await response.json();$('#apply-loading').hidden=true;if(info.open)form.hidden=false;else $('#apply-closed').hidden=false}).catch(()=>{$('#apply-loading').textContent='Formulari nuk mund të hapet për momentin. Rifreskoni faqen dhe provoni përsëri.'});
