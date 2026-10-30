@@ -40,7 +40,7 @@ function itemData(b,previous={}){
   const list=(v,max)=>[...new Set((Array.isArray(v)?v:[]).map(x=>clean(x,max)).filter(Boolean))].slice(0,20);
   let showreel=clean(c.showreel,1000);
   if(showreel){try{const u=new URL(showreel);if(u.protocol!=='https:'||u.username||u.password)throw Error();showreel=u.href}catch{throw fail(400,'Use a complete HTTPS link for the showreel')}}
-  data.casting={gender,playingAge:clean(c.playingAge,50),height:clean(c.height,50),languages:list(c.languages,50),skills:list(c.skills,80),showreel,workedBefore:['yes','no','unknown'].includes(c.workedBefore)?c.workedBefore:'unknown'};
+  data.casting={gender,playingAge:clean(c.playingAge,50),height:clean(c.height,50),languages:list(Object.hasOwn(c,'languages')?c.languages:previous.type==='casting'?previous.casting?.languages:[],50),skills:list(c.skills,80),showreel,workedBefore:['yes','no','unknown'].includes(c.workedBefore)?c.workedBefore:'unknown'};
  }
  return data;
 }

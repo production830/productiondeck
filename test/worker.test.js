@@ -135,6 +135,9 @@ test('casting profiles normalize structured fields and preserve them through sha
  let read=await(await f.req('/api/items',{cookie:'__Host-pd_access=crew-token'})).json();assert.equal(read[0].casting.playingAge,'25–35');assert.equal(read[0].casting.showreel,'https://example.test/reel');
  const update=await f.req('/api/items/'+id,{method:'PUT',body:{...data,casting:{...data.casting,skills:['Dance','Singing'],workedBefore:'no'}}});assert.equal(update.status,200);
  read=await(await f.req('/api/items')).json();assert.deepEqual(read[0].casting.skills,['Dance','Singing']);assert.equal(read[0].casting.workedBefore,'no');
+ const {languages:removedLanguages,...visibleCasting}=read[0].casting;
+ assert.equal((await f.req('/api/items/'+id,{method:'PUT',body:{...data,title:'Edited without a language field',casting:visibleCasting}})).status,200);
+ read=await(await f.req('/api/items')).json();assert.deepEqual(read[0].casting.languages,['English','Albanian']);assert.deepEqual(read[0].casting.skills,['Dance','Singing']);
  const board=await(await f.req('/api/boards',{method:'POST',body:{name:'Casting shortlist'}})).json();assert.equal((await f.req('/api/boards/'+board.id,{method:'PUT',body:{items:[id]}})).status,200);assert.deepEqual(f.tables.boards[0].items,[id]);
 });
 test('casting accepts optional fields but blocks unsafe portfolio links',async()=>{

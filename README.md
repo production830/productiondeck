@@ -230,3 +230,12 @@ Authenticated `/api/items/:id/auto-tags` merges against the latest stored tags a
 The setup endpoint has its own Cloudflare rate-limit binding and same-origin protection. Passwords, recovery tokens and session tokens are not logged or included in error details. Link validity uses Supabase's recovery-token settings. Copying the private link is a manual administrator action; closing its dialog clears the displayed link.
 
 Verification includes seventy-one automated tests, actual local browser inference on public bus/fruit test photos and a synthetic green image under the production CSP, and full browser flows through the real Worker handler with isolated simulated Supabase accounts/data. No passwords, setup links or test photos are written to the live library by these checks. No SQL migration or additional service secret is needed.
+
+
+## Simplified collection navigation and Casting fields
+
+The workspace opens on **Locations**. The combined All references navigation/view is removed; Locations, Props and Casting remain separate collections, while Project Decks can still contain all three kinds. Deleting an open deck returns to Locations, and an unknown or stale collection ID falls back there. Library data is never deleted by this navigation change.
+
+Casting no longer displays or collects languages: the editor, filters, profile cards/details, search, public application form, application review and Project Deck PDF metadata omit that field. Existing stored language values are retained for compatibility and are preserved when an updated editor saves other casting details. Historical application values are preserved during review. New applications can be submitted without languages. Skills, gender, photos, contacts and all other casting fields remain available.
+
+The Cloudflare build runs the syntax checks and automated tests before downloading dependencies or deploying. This includes a regression check that editing a historical casting profile without a language field preserves its other details and historical values. No database migration is needed.

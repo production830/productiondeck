@@ -12,7 +12,7 @@
  }
  form.onsubmit=async event=>{
   event.preventDefault();if(busy)return;$('#apply-error').textContent='';const fields=Object.fromEntries(new FormData(form)),files=[...form.elements.photos.files];let data;
-  try{data=model.validate({...fields,languages:list(fields.languages),skills:list(fields.skills),interests:[...form.querySelectorAll('[name=interest]:checked')].map(input=>input.value),consent:form.elements.consent.checked});if(files.length<1||files.length>4)throw Error('Zgjidhni nga 1 deri në 4 fotografi.')}catch(error){$('#apply-error').textContent=error.message;return}
+  try{data=model.validate({...fields,skills:list(fields.skills),interests:[...form.querySelectorAll('[name=interest]:checked')].map(input=>input.value),consent:form.elements.consent.checked});if(files.length<1||files.length>4)throw Error('Zgjidhni nga 1 deri në 4 fotografi.')}catch(error){$('#apply-error').textContent=error.message;return}
   busy=true;$('#apply-fields').disabled=true;$('#apply-submit').disabled=true;
   try{
    const body=new FormData();body.set('details',JSON.stringify({...data,consent:true,consentVersion:model.consentVersion,submissionKey:key}));body.set('website',fields.website||'');for(const [index,file] of files.entries()){$('#apply-status').textContent='Duke përgatitur fotografinë '+(index+1)+' nga '+files.length+'…';body.append('photos',await photo(file),'photo-'+(index+1)+'.jpg')}

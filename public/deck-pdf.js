@@ -77,7 +77,7 @@
    if(options.extraPhotos&&photos.length>1){ensure(39);for(const [at,id] of photos.slice(1,4).entries()){const image=await picture('/media/'+encodeURIComponent(id),{signal,refresh});doc.setFillColor(...color.paper);doc.rect(18+at*59,y,56,33,'F');imageFit(image,18+at*59,y,56,33,'photo-'+id)}y+=41}
    const fields=[["Nënkategoritë",ProductiondeckTaxonomy.fromItem(item).map(ProductiondeckTaxonomy.label).join(' · ')],["Qyteti",item.city],["Ambienti",item.type==='casting'?'':ProductiondeckTaxonomy.display(item.setting)],["Disponueshmëria",ProductiondeckTaxonomy.display(item.availability)],["Etiketa",(item.tags||[]).join(' · ')]];
    if(item.type==='casting'){
-    const casting=item.casting||{};fields.push(["Gjinia",ProductiondeckTaxonomy.genders[casting.gender]||"Nuk është shënuar"],["Mosha për role",casting.playingAge],["Gjatësia",casting.height],["Gjuhët",(casting.languages||[]).join(', ')],["Aftësitë",(casting.skills||[]).join(', ')],["Ka punuar me ne",casting.workedBefore==='yes'?"Po":casting.workedBefore==='no'?"Jo":"Nuk është shënuar"],["Video prezantuese / portfolio",casting.showreel]);
+    const casting=item.casting||{};fields.push(["Gjinia",ProductiondeckTaxonomy.genders[casting.gender]||"Nuk është shënuar"],["Mosha për role",casting.playingAge],["Gjatësia",casting.height],["Aftësitë",(casting.skills||[]).join(', ')],["Ka punuar me ne",casting.workedBefore==='yes'?"Po":casting.workedBefore==='no'?"Jo":"Nuk është shënuar"],["Video prezantuese / portfolio",casting.showreel]);
    }
    if(options.internal)fields.push(["Kontakti / agjenti",item.contact],["Adresa / ruajtja",item.address],["Kostoja / shënime për qiranë",item.cost]);
    metadata(fields);

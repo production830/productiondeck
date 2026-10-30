@@ -15,7 +15,7 @@
     "SUPABASE_URL": "https://jqjbyekctjhvrfltidfc.supabase.co"
   },
   "build": {
-    "command": "node scripts/vendor-pdf.mjs && node scripts/vendor-vision.mjs"
+    "command": "npm run check && npm test && node scripts/vendor-pdf.mjs && node scripts/vendor-vision.mjs"
   },
   "ratelimits": [
     {
