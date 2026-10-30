@@ -8,7 +8,7 @@
   const firstName=text(input.firstName,100),lastName=text(input.lastName,100);if(!firstName||!lastName)throw Error('Shkruani emrin dhe mbiemrin.');
   const phone=text(input.phone,100),email=text(input.email,320).toLowerCase();if(phone.replace(/\D/g,'').length<5)throw Error('Shkruani një numër telefoni të vlefshëm.');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Shkruani një adresë email të vlefshme.');
   const city=ProductiondeckTaxonomy.canonicalCity(input.city);if(!city)throw Error('Zgjidhni qytetin nga lista.');
-  const gender=input.gender||'';if(gender!==''&&!Object.hasOwn(ProductiondeckTaxonomy.genders,gender))throw Error('Zgjidhni një vlerë të vlefshme për gjininë.');
+  const gender=input.gender||'';if((!review&&gender==='')||(gender!==''&&!Object.hasOwn(ProductiondeckTaxonomy.genders,gender)))throw Error('Zgjidhni një vlerë të vlefshme për gjininë.');
   // Roles are assigned privately by the team, never by a public applicant.
   const assignedInterests=review?(input.interests||[]):[];
   if(!Array.isArray(assignedInterests)||assignedInterests.length>5||assignedInterests.some(value=>!Object.hasOwn(interests,value)))throw Error('Zgjidhni një klasifikim të vlefshëm për kastingun.');
